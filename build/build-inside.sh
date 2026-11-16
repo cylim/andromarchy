@@ -70,7 +70,11 @@ pacman -Rns --noconfirm rust
 
 # Omarchy.
 rm -rf /tmp/omarchy
-rm -rf /tmp/omarchy && git clone -q --depth 1 ${OMARCHY_REF:+-b "$OMARCHY_REF"} https://github.com/basecamp/omarchy /tmp/omarchy
+# Omarchy 4.5 (its newest v4.5.x tag), which goes with the stable package channel and our Hyprland; "omarchy update"
+# follows the same series (omarchy/omarchy-update-dev-android.sh).
+OMARCHY_REF=${OMARCHY_REF:-$(git ls-remote --tags --refs https://github.com/basecamp/omarchy 'v4.5.*' |
+  sed -n 's|.*refs/tags/\(v[0-9][0-9.]*\)$|\1|p' | sort -V | tail -1)}
+rm -rf /tmp/omarchy && git clone -q --depth 1 -b "$OMARCHY_REF" https://github.com/basecamp/omarchy /tmp/omarchy
 git -C /tmp/omarchy log -1 --format='omarchy %H %cd' > /etc/lotfix-omarchy-version
 bash $L/omarchy/install-omarchy-android.sh /tmp/omarchy
 # systemctl without systemd (user services, Restart=), ahead of systemd's own in /usr/local/bin.
@@ -106,29 +110,7 @@ install -m 755 $L/native/bwrap-shim.sh /usr/local/bin/bwrap
 # pkexec (polkit, setuid) -> the same fake root as sudo.
 install -m 755 $L/native/pkexec-shim.sh /usr/local/bin/pkexec
 
-# Browser: Brave Origin (AUR binary release, aarch64), instead of Firefox. makepkg refuses to run as root:
-# - native (fake root): its dependencies installed here (we are root), then makepkg without the fake root (the
-#   real app uid underneath) and without -s (no sudo needed);
-# - PC chroot (real root): a throwaway user.
-rm -rf /tmp/brave && git clone -q https://aur.archlinux.org/brave-origin-bin.git /tmp/brave
-if [ -n "${LOTFIX_NATIVE:-}" ]; then
-  pacman -S --noconfirm --needed $(cd /tmp/brave && source ./PKGBUILD && echo "${depends[@]}")
-  # makepkg packages under Arch's fakeroot, which takes our fakechroot (its path holds "libfakeroot") for a nested
-  # fakeroot and stops. Owners do not matter here: a fakeroot that just runs the command.
-  mkdir -p /tmp/nofakeroot && printf '#!/bin/sh\n[ "$1" = -- ] && shift\nexec "$@"\n' > /tmp/nofakeroot/fakeroot
-  chmod 755 /tmp/nofakeroot/fakeroot
-  (cd /tmp/brave && env -u FAKEROOTKEY PATH=/tmp/nofakeroot:$PATH LD_PRELOAD="$(printf '%s' "$LD_PRELOAD" |
-    tr ':' '\n' | grep -v libfakeroot.so | paste -sd:)" makepkg --noconfirm 2>&1 | tail -3)
-  rm -rf /tmp/nofakeroot
-else
-  useradd -m aurbuild 2>/dev/null || true
-  chown -R aurbuild /tmp/brave
-  (cd /tmp/brave && runuser -u aurbuild -- makepkg --noconfirm -s 2>&1 | tail -3)
-  userdel -r aurbuild 2>/dev/null || true
-fi
-pacman -U --noconfirm /tmp/brave/brave-origin-bin-*.pkg.tar.*
-rm -rf /tmp/brave
-xdg-settings set default-web-browser brave-origin.desktop || true # Omarchy's install ran before it existed
+# No browser in the image: Omarchy's Install > Browser menu has them (Zen, Brave, Chromium...), from its repository.
 # No udev daemon on Android: udevadm control/trigger/settle succeed as no-ops.
 install -m 755 $L/native/udevadm-shim.sh /usr/local/bin/udevadm
 # The session's own system bus (SessionService) and the UPower stand-in it carries (battery from Android).
@@ -165,7 +147,9 @@ rm -rf /tmp/wtype && git clone -q https://github.com/atx/wtype /tmp/wtype && git
     X=protocol/virtual-keyboard-unstable-v1.xml &&
     wayland-scanner client-header $X virtual-keyboard-unstable-v1-client-protocol.h && wayland-scanner private-code $X vk.c &&
     gcc -O2 -I. -o /usr/local/bin/wtype main.c vk.c $(pkg-config --cflags --libs wayland-client xkbcommon)) && rm -rf /tmp/wtype
-gcc -O2 -shared -fPIC -o /opt/lotfix/android-compat.so $L/native/android-compat.c $L/native/go-syscalls.c -ldl
+gcc -O2 -shared -fPIC -o /opt/lotfix/android-compat.so $L/native/android-compat.c $L/native/go-syscalls.c \
+  $L/native/android-ifaddrs.c -ldl
+touch /opt/lotfix/firefox-sandbox # this library lets Firefox's sandbox run: the launcher leaves it on (lotfix-run.c)
 # glibc reads locales internally from LOCPATH, which ignores locale-archive: one directory per locale.
 localedef --no-archive -i en_US -f UTF-8 /usr/lib/locale/en_US.UTF-8
 

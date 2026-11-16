@@ -33,7 +33,7 @@ import java.util.Locale;
 public class InstallActivity extends Activity {
     /** The rootfs built by build/build-rootfs.sh, published as a GitHub release asset. */
     static final String ROOTFS_URL = "https://github.com/lotfibennour/andromarchy/releases/latest/download/lotfix-rootfs.tar.gz";
-    /** A local copy in the app's external files dir (Android/data/andro.marchy/files/, no permission needed) is used
+    /** A local copy in the app's external files dir (Android/data/app.jrny.omarchy/files/, no permission needed) is used
      *  instead when present: offline installs and tests. */
     static final String LOCAL_NAME = "lotfix-rootfs.tar.gz";
     private static final long NEEDED_BYTES = 12L << 30; // archive + extracted rootfs, with room for apps

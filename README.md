@@ -5,7 +5,7 @@
 
 Andromarchy runs a full Arch Linux ARM desktop on an Android tablet. Linux programs run directly on the device, with
 its GPU (Mesa Turnip/Freedreno on KGSL), sound, cameras, touch screen and on-screen keyboard. You get Omarchy's
-desktop with its apps, the Flatpak store, Brave, VS Code, and anything else from Arch Linux ARM.
+desktop with its apps, the Flatpak store, browsers (Zen, Brave...), VS Code, and anything else from Arch Linux ARM.
 
 <img width="800" height="450" alt="andromarchy_demo" src="https://github.com/user-attachments/assets/61e4b65d-52a7-4d93-b21b-31fb3c5ac1d8" />
 
@@ -41,13 +41,14 @@ change (HyperOS/MIUI take some gestures for themselves), installing apps, and th
 - **GPU:** Mesa with KGSL support (no `/dev/dri` needed); XWayland is GPU-accelerated too.
 - **Flatpak** without user namespaces: sandboxes are built as trees of links (`native/bwrap-flatpak.py`), with a
   document portal and `flatpak-spawn` stand-ins.
-- **Updates are safe:** `pacman -Syu` works. Pacman hooks keep our builds (Mesa, Hyprland, aquamarine, fakechroot) in
-  place across updates.
+- **Updates are safe:** `omarchy update` and `pacman -Syu` work, on Omarchy's stable channel for ARM (its packages,
+  T3 Code and Claude Code among them, and its mirror of Arch Linux ARM). Pacman hooks keep our builds (Mesa, Hyprland,
+  aquamarine, fakechroot) in place across updates.
 
 ## Known limits
 
 - Flatpak apps are not isolated from each other: Android gives apps no way to build real sandboxes.
-- YouTube in Brave decodes video on the processor (hardware decoding works in `mpv` and `ffmpeg`).
+- YouTube in Chromium-based browsers (Brave...) decodes video on the processor (hardware decoding works in `mpv` and `ffmpeg`).
 - Old games that change the screen resolution (Allegro 4 and similar) are drawn full-screen but don't receive taps
   yet. Play them in windowed mode.
 - There is no real administrator account: `sudo` installs and configures Linux software but cannot change Android.

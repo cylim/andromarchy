@@ -66,6 +66,11 @@ public class MainActivity extends Activity
     private int viewHeight = 0;
     private static final String KEY_BOUND_KEYCODE = "bound_keycode";
     private static final String KEY_SOCKET_PATH = "socket_path";
+
+    /** The session's own daemon socket, under this app's files dir whatever the application id. */
+    private String defaultSocketPath() {
+        return SessionService.daemonSocket(this).getPath();
+    }
     private static final String KEY_USE_ROOT = "use_root";
     // Latency presets in ms; 0 = engine default. Shared with SettingsActivity.
     static final String KEY_SPEAKER_LATENCY_MS = "speaker_latency_ms";
@@ -84,7 +89,6 @@ public class MainActivity extends Activity
     // the AAudio playback stream while this window is in the foreground.
     private AudioManager mAudioManager;
     private AudioFocusRequest mAudioFocusRequest;
-    private static final String DEFAULT_SOCKET_PATH = "/data/data/andro.marchy/files/run/andromarchy/display_daemon.sock";
     private static final String KEY_ACCESSIBILITY_ENABLED = "accessibility_key_intercept";
     private static final String KEY_EXTRA_KEYS_ENABLED = "extra_keys_bar";
     private static final String KEY_AUTO_SHOW_EXTRA_KEYS = "auto_show_extra_keys";
@@ -232,9 +236,9 @@ public class MainActivity extends Activity
     // Termux-side Binder bridge instead of calling connect() from this UID.
     private void applyConnectionConfig() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        String sock = prefs.getString(KEY_SOCKET_PATH, DEFAULT_SOCKET_PATH);
+        String sock = prefs.getString(KEY_SOCKET_PATH, defaultSocketPath());
         if (sock == null || sock.trim().isEmpty())
-            sock = DEFAULT_SOCKET_PATH;
+            sock = defaultSocketPath();
         boolean useRoot = prefs.getBoolean(KEY_USE_ROOT, false);
         String helperPath = getApplicationInfo().nativeLibraryDir + "/libfdhelper.so";
         String bridgePath = getCacheDir().getAbsolutePath() + "/andromarchy_fdbridge.sock";
@@ -295,6 +299,7 @@ public class MainActivity extends Activity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Prefs.init(this); // settings defaults + move from the former file name
+        InputTrace.init(this);
 
         // Andromarchy: this app is also the Linux side. Start the session (daemon, audio, Hyprland) if the Arch
         // rootfs is installed; this activity then connects to the daemon like the Termux version did.
@@ -708,7 +713,13 @@ public class MainActivity extends Activity
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                     && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                             != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1003);
+                // Once per process: Android answers a request for a permission the user refused at once, through
+                // a pause and a resume, and asking again on every resume looped (the screen blinked, the display
+                // reconnected several times a second, and the microphone/camera prompt was cancelled each time).
+                if (!notificationsAsked) {
+                    notificationsAsked = true;
+                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1003);
+                }
             } else {
                 showSettingsNotification();
             }
@@ -962,6 +973,7 @@ public class MainActivity extends Activity
 
     /** Microphone, camera and location in ONE prompt: a second request while the first dialog shows is cancelled. */
     private boolean devicePermissionsAsked;
+    private static boolean notificationsAsked; // per process: the activity is recreated on rotation
 
     private void requestDevicePermissions() {
         if (devicePermissionsAsked)
@@ -1011,6 +1023,8 @@ public class MainActivity extends Activity
     public void onRequestPermissionsResult(int requestCode, String[] permissions,
                                            int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_RECORD_AUDIO && permissions.length == 0)
+            devicePermissionsAsked = false; // cancelled by another prompt (notifications): asked again on resume
         if (requestCode == REQ_RECORD_AUDIO || requestCode == REQ_CAMERA) {
             for (int i = 0; i < permissions.length && i < grantResults.length; i++) {
                 boolean granted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
@@ -1266,6 +1280,25 @@ public class MainActivity extends Activity
         } finally {
             event.offsetLocation(offsetX, offsetY);
         }
+    }
+
+    // Input trace (InputTrace: off unless run/input-trace exists): everything the window is sent, before any handling.
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        InputTrace.motion("touch", event);
+        return super.dispatchTouchEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        InputTrace.motion("generic", event);
+        return super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        InputTrace.key("key", event);
+        return super.dispatchKeyEvent(event);
     }
 
     @Override
@@ -1845,9 +1878,9 @@ public class MainActivity extends Activity
         float gestureY = capturedAxis(event,
             MotionEvent.AXIS_GESTURE_SCROLL_Y_DISTANCE, 0, historyPos);
         if (gestureY != 0f)
-            Native.nativeSendMouseScroll(0, gestureY);
+            Native.nativeSendTouchpadScroll(0, gestureY);
         if (gestureX != 0f)
-            Native.nativeSendMouseScroll(1, -gestureX);
+            Native.nativeSendTouchpadScroll(1, -gestureX);
     }
 
     private boolean hasCapturedTouchpadScrollAxes(MotionEvent event) {
@@ -2084,17 +2117,56 @@ public class MainActivity extends Activity
         return Math.max(min, Math.min(max, value));
     }
 
+    // Axes scrolled during the current two-finger scroll: each gets its end of scroll when the fingers leave.
+    private boolean mTouchpadScrolledV, mTouchpadScrolledH;
+
+    /**
+     * A touchpad's two-finger scroll (Android's own gesture, in display pixels), sent as a finger scroll like a
+     * laptop's touchpad under libinput. As mouse wheel events the compositor counted each pixel as 1/15 of a wheel
+     * click: pages raced, and Omarchy's touchpad scroll speed (input.touchpad.scroll_factor) did not apply.
+     */
     private boolean handleTouchpadScroll(MotionEvent event) {
-        if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_MOVE) {
+            surfaceView.removeCallbacks(mTouchpadScrollEnd); // scrolling again before the end was sent: one scroll
+            // Android delivers the touchpad's samples in batches, one event per display frame: the distances are in
+            // the event's history (the event's own values are those of a resampled point, 0 for most events). Read
+            // alone, they gave nothing during the swipe and one lump at its end, which apps took for a fling: a
+            // two-finger scroll jumped a page at a time. The frame's scroll is the sum of its samples.
             float scrollX = event.getAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_X_DISTANCE);
             float scrollY = event.getAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_Y_DISTANCE);
-            if (scrollY != 0)
-                Native.nativeSendMouseScroll(0, scrollY);
-            if (scrollX != 0)
-                Native.nativeSendMouseScroll(1, -scrollX);
+            for (int h = 0; h < event.getHistorySize(); h++) {
+                scrollX += event.getHistoricalAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_X_DISTANCE, h);
+                scrollY += event.getHistoricalAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_Y_DISTANCE, h);
+            }
+            if (scrollY != 0) {
+                Native.nativeSendTouchpadScroll(0, scrollY);
+                mTouchpadScrolledV = true;
+            }
+            if (scrollX != 0) {
+                Native.nativeSendTouchpadScroll(1, -scrollX);
+                mTouchpadScrolledH = true;
+            }
+        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            // The fingers left: the end of the scroll, a moment later. Sent at once, apps took the speed of the last
+            // frames for a fling and kept scrolling long after one short swipe (their own kinetic scrolling, much
+            // longer than Android's). After a pause they see a scroll that had stopped: the page stays where the
+            // fingers left it.
+            surfaceView.removeCallbacks(mTouchpadScrollEnd);
+            surfaceView.postDelayed(mTouchpadScrollEnd, TOUCHPAD_SCROLL_END_DELAY_MS);
         }
         return true;
     }
+
+    // Longer than the window apps measure the final speed over (GTK: 150 ms; Firefox and Chromium: under 100 ms).
+    private static final long TOUCHPAD_SCROLL_END_DELAY_MS = 200;
+    private final Runnable mTouchpadScrollEnd = () -> {
+        if (mTouchpadScrolledV)
+            Native.nativeSendTouchpadScroll(0, 0f);
+        if (mTouchpadScrolledH)
+            Native.nativeSendTouchpadScroll(1, 0f);
+        mTouchpadScrolledV = mTouchpadScrolledH = false;
+    };
 
     // 原有 handleTouchEvent 一字未改
     private boolean redirected; // first launch: handed over to InstallActivity in onCreate

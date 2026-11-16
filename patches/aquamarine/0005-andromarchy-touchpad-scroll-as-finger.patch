@@ -1,0 +1,42 @@
+diff --git i/src/backend/Andromarchy.cpp w/src/backend/Andromarchy.cpp
+index aafad45..e32a2af 100644
+--- i/src/backend/Andromarchy.cpp
++++ w/src/backend/Andromarchy.cpp
+@@ -434,9 +434,14 @@ void Aquamarine::CAndromarchyBackend::processInput(const InputEvent& ev) {
+         case INPUT_TYPE_POINTER_AXIS:
+             if (pointer) {
+                 // protocol axis: 0 = vertical, 1 = horizontal (wayland order, same as aquamarine)
++                // source: a touchpad's two-finger scroll comes as "finger", like libinput's. As a wheel, the
++                // compositor counted every pixel of it as 1/15 of a wheel click (scrolling raced), its touchpad
++                // scroll factor did not apply, and apps got no end of scroll (no kinetic scrolling). A finger scroll
++                // ends with a 0 delta, which the compositor turns into axis_stop.
+                 pointer->events.axis.emit(IPointer::SAxisEvent{.timeMs   = t,
+                                                                .axis     = ev.pointer_axis.axis == 0 ? IPointer::AQ_POINTER_AXIS_VERTICAL : IPointer::AQ_POINTER_AXIS_HORIZONTAL,
+-                                                               .source   = IPointer::AQ_POINTER_AXIS_SOURCE_WHEEL,
++                                                               .source   = ev.pointer_axis.source == POINTER_AXIS_SOURCE_FINGER ? IPointer::AQ_POINTER_AXIS_SOURCE_FINGER :
++                                                                                                                                  IPointer::AQ_POINTER_AXIS_SOURCE_WHEEL,
+                                                                .delta    = ev.pointer_axis.value,
+                                                                .discrete = (double)ev.pointer_axis.discrete});
+                 pointer->events.frame.emit();
+diff --git i/src/backend/andromarchy/protocol.h w/src/backend/andromarchy/protocol.h
+index c76b506..d79b692 100644
+--- i/src/backend/andromarchy/protocol.h
++++ w/src/backend/andromarchy/protocol.h
+@@ -74,6 +74,9 @@ struct buf_info {
+ #define INPUT_ACTION_UP      1
+ #define INPUT_ACTION_MOVE    2
+ 
++#define POINTER_AXIS_SOURCE_WHEEL  0 /* a mouse wheel: value in wheel units (10 = one click) */
++#define POINTER_AXIS_SOURCE_FINGER 1 /* a touchpad's two-finger scroll: value in pixels, 0 = the fingers left */
++
+ struct InputEvent {
+     uint32_t type;
+     union {
+@@ -101,6 +104,7 @@ struct InputEvent {
+             uint32_t axis;
+             float    value;
+             int32_t  discrete;
++            uint32_t source; // POINTER_AXIS_SOURCE_*; apps older than this field send whatever was there: only 1 is a finger
+         } pointer_axis;
+         struct {
+             uint32_t refresh_mhz; // current display refresh rate, milli-Hz

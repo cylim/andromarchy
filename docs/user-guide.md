@@ -59,7 +59,7 @@ HyperOS may restore them after a restart. To let Andromarchy turn app switching 
 this permission once:
 
 ```sh
-adb shell pm grant andro.marchy android.permission.WRITE_SECURE_SETTINGS
+adb shell pm grant app.jrny.omarchy android.permission.WRITE_SECURE_SETTINGS
 ```
 
 HyperOS does not let apps change the split-screen setting: if 3-finger swipes stop working after a restart, run the
@@ -72,7 +72,7 @@ adb shell settings put system enable_three_gesture 1
 adb shell settings put system three_gesture_horizontal_ltr split_ltr
 adb shell settings put system three_gesture_horizontal_rtl split_rtl
 adb shell settings put global multi_finger_slide 1
-adb shell pm revoke andro.marchy android.permission.WRITE_SECURE_SETTINGS
+adb shell pm revoke app.jrny.omarchy android.permission.WRITE_SECURE_SETTINGS
 ```
 
 Swipes from the screen edges (home, back, notifications) stay with Android.
@@ -93,7 +93,13 @@ You can change them in `~/.config/hypr/touch.lua`.
 ### On-screen keyboard
 
 The keyboard (Squeekboard) appears by itself when you tap a text field, and hides while a hardware keyboard is
-connected. The **⌨** icon in the bar shows or hides it at any time.
+connected. The **⌨** icon in the bar switches it on and off:
+
+- Tap **⌨** while the keyboard is shown: it hides and **stays off**. It no longer appears in text fields, in later
+  sessions too.
+- Tap **⌨** again: the keyboard is back, and appears in text fields as before.
+
+From a terminal: `squeekboard-toggle off` and `squeekboard-toggle on`.
 
 - It has a full PC layout: Esc, Tab, Ctrl, Super, Alt, AltGr, arrows, and F1–F12 on AltGr.
 - **🌐** switches between the keyboard layouts you chose on the first-launch screen (Omarchy's). French,
@@ -113,8 +119,39 @@ connected. The **⌨** icon in the bar shows or hides it at any time.
 
 - **App store**: GNOME Software, with Flathub. Flatpak apps run on the tablet's GPU. If the store is empty, run this in a terminal: `flatpak --user remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo`
 - **Terminal**: `sudo pacman -S <package>` for Arch Linux packages, `yay -S <package>` for the AUR.
+- **Omarchy's packages**: pacman also uses Omarchy's own repository for ARM, so the apps of Omarchy's **Install** menu
+  come from it. For example **T3 Code**: `sudo pacman -S t3code-bin`, then **T3 Code** in the app launcher. Take the
+  ARM build this way: the download button on a website gives the x86_64 one, which cannot run on a tablet.
 - Andromarchy's own components (graphics drivers, compositor, keyboard) are protected: an install or a full update
   (`sudo pacman -Syu`, `omarchy-update`) cannot replace them. If an update needs attention, a notification says so.
+
+## Updating
+
+Run **Update → Omarchy** in Omarchy's menu, or in a terminal:
+
+```sh
+omarchy update
+```
+
+It updates Omarchy to the newest 4.5 release, then the packages, then runs Omarchy's migrations.
+
+- Packages come from Omarchy's stable channel: its package repository and its mirror of Arch Linux ARM. They change
+  when Omarchy publishes a release, and they match the Hyprland that Andromarchy is built for.
+- Omarchy stays on 4.5 (`v4.5.x`). To follow a later series, a branch or a tag, write its name in
+  `/etc/andromarchy/omarchy-ref` (`v4.6`, `quattro`, `v4.5.0`). The development branch (`quattro`) expects packages
+  that the stable channel does not have.
+- The Omarchy version in use before the last update is in `~/.local/state/andromarchy/omarchy-previous`.
+
+### Updating Andromarchy's own parts
+
+The Linux side of an installed Andromarchy (compatibility library, keyboard scripts, update fixes) updates without
+reinstalling the app:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cylim/andromarchy/main/native/andromarchy-refresh.sh | bash
+```
+
+Changes to the Android app itself need the new APK.
 
 ## Checking that everything works
 
@@ -131,7 +168,7 @@ check. Add `-v` to see why a check fails.
 
 - **Flatpak apps are not isolated** from each other: Android gives apps no way to build the sandboxes Flatpak uses.
   They run with your user's access, like ordinary programs.
-- **YouTube in Brave** decodes video on the processor. Hardware decoding works in `mpv` and `ffmpeg`.
+- **YouTube in Chromium-based browsers** (Brave...) decodes video on the processor. Hardware decoding works in `mpv` and `ffmpeg`.
 - Old games that change the screen resolution (Allegro 4 and similar) are drawn full-screen but don't receive taps
   yet: play them in windowed mode.
 - There is no real administrator account: `sudo` works for installing and configuring, but cannot change the tablet's

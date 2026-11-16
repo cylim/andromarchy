@@ -4,16 +4,16 @@
 #   - the installed one (the app's files/rootfs): downloads, Hyprland build, unpacking, packing;
 #   - the new one (being built): build-inside.sh, started directly with lotfix-run (an Android program: it cannot
 #     be exec'd from inside a rootfs, hence this driver in Android's shell).
-# Run as the app:   run-as andro.marchy sh build-rootfs-native.sh <repo dir in the app's files>
+# Run as the app:   run-as app.jrny.omarchy sh build-rootfs-native.sh <repo dir in the app's files>
 # Output: files/build/out/lotfix-rootfs.tar.gz (+ .sha256), files/build/out/lotfix-hyprland-aarch64.tar.zst
 set -eu
-APP=/data/data/andro.marchy/files
+APP=/data/data/app.jrny.omarchy/files
 R=$APP/rootfs                       # the installed rootfs (host path)
 B=$APP/rootfs/var/tmp/lotfix-build  # work dir, inside it so its tools reach it (guest: /var/tmp/lotfix-build)
 G=/var/tmp/lotfix-build             # ...and its guest path
 N=$B/rootfs                         # the new rootfs (host path)
 REPO=${1:?repo dir (patches/, omarchy/, native/, build/), as a path inside the installed rootfs}
-LAUNCHER=$(dirname "$(pm path andro.marchy | cut -d: -f2)")/lib/arm64/liblotfixrun.so
+LAUNCHER=$(dirname "$(pm path app.jrny.omarchy | cut -d: -f2)")/lib/arm64/liblotfixrun.so
 RUN=$APP/run
 
 ALARM_URL=http://os.archlinuxarm.org/os/ArchLinuxARM-aarch64-latest.tar.gz

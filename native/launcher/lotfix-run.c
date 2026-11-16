@@ -195,13 +195,20 @@ int main(int argc, char **argv)
     setenv("MESA_LOADER_DRIVER_OVERRIDE", zink ? "zink" : "kgsl", 1);
     setenv("GALLIUM_DRIVER", zink ? "zink" : "freedreno", 1);
 
-    // Firefox's sandbox broker checks fakechroot-rewritten paths against its allow list and denies them (every tab
-    // crashes with "no fonts"). Trade-off: web content runs without Firefox's process sandbox.
-    setenv("MOZ_DISABLE_CONTENT_SANDBOX", "1", 1);
-    setenv("MOZ_DISABLE_RDD_SANDBOX", "1", 1);
-    setenv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX", "1", 1);
-    setenv("MOZ_DISABLE_GMP_SANDBOX", "1", 1);
-    setenv("MOZ_DISABLE_UTILITY_SANDBOX", "1", 1);
+    // Firefox's sandbox (seccomp filter + file broker; Zen, LibreWolf... too) works once android-compat hands the
+    // sandbox's traps to Firefox with guest paths (go-syscalls.c) and preloads libmozsandbox.so by its full path:
+    // a rootfs whose library does says so with /opt/lotfix/firefox-sandbox. Before that, the broker got
+    // fakechroot-rewritten paths, denied them, and every tab crashed: the sandbox stays off on such a rootfs.
+    // (The namespace half of the sandbox needs user namespaces, which Android denies to apps: never available.)
+    char marker[PATH_SZ];
+    snprintf(marker, sizeof marker, "%s/firefox-sandbox", L);
+    if (access(marker, F_OK) != 0) {
+        setenv("MOZ_DISABLE_CONTENT_SANDBOX", "1", 1);
+        setenv("MOZ_DISABLE_RDD_SANDBOX", "1", 1);
+        setenv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX", "1", 1);
+        setenv("MOZ_DISABLE_GMP_SANDBOX", "1", 1);
+        setenv("MOZ_DISABLE_UTILITY_SANDBOX", "1", 1);
+    }
     // Same for the other sandbox families, which all need user namespaces or setuid helpers (denied to apps):
     // Electron apps, and WebKitGTK's web process (bubblewrap). Chromium itself: android-compat adds --no-sandbox.
     setenv("ELECTRON_DISABLE_SANDBOX", "1", 1);

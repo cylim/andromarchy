@@ -1,6 +1,36 @@
 #!/bin/sh
-# /usr/local/bin/squeekboard-toggle: show/hide Squeekboard (bar icon). Starts it if it is not running.
+# /usr/local/bin/squeekboard-toggle: the on-screen keyboard's switch (bar icon).
+#   squeekboard-toggle        shown -> off (hidden, and it stops popping up in text fields); else -> on (shown)
+#   squeekboard-toggle on|off the same, by name
+#   squeekboard-toggle apply  only set the automatic display from the saved choice (squeekboard-session)
+# The choice is kept across sessions in ~/.config/andromarchy/osk. The automatic display also stays off while a
+# hardware keyboard is connected (the app writes 1/0 to $XDG_RUNTIME_DIR/hardware-keyboard); "on" still shows the
+# keyboard then, on demand.
+state=${XDG_CONFIG_HOME:-$HOME/.config}/andromarchy/osk
+osk() { busctl --user "$1" sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 "$2" ${3:+b "$3"}; }
+visible() { [ "$(osk get-property Visible 2>/dev/null | cut -d' ' -f2)" = true ]; }
+apply() {
+  if [ "$(cat "$state" 2>/dev/null)" = off ] || [ "$(cat "$XDG_RUNTIME_DIR/hardware-keyboard" 2>/dev/null)" = 1 ]; then
+    gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled false
+  else
+    gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true
+  fi
+}
+
+want=${1:-toggle}
+[ "$want" = apply ] && { apply; exit; }
 pgrep -x squeekboard >/dev/null || { squeekboard >/dev/null 2>&1 & sleep 1.5; }
-v=$(busctl --user get-property sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 Visible 2>/dev/null | cut -d' ' -f2)
-[ "$v" = true ] && v=false || v=true
-busctl --user call sm.puri.OSK0 /sm/puri/OSK0 sm.puri.OSK0 SetVisible b $v
+if [ "$want" = toggle ]; then visible && want=off || want=on; fi
+case $want in
+  on|off) ;;
+  *) echo "usage: squeekboard-toggle [on|off|apply]" >&2; exit 2 ;;
+esac
+mkdir -p "${state%/*}" && echo "$want" > "$state"
+apply
+if [ "$want" = on ]; then
+  osk call SetVisible true
+else
+  osk call SetVisible false
+  notify-send -t 2500 "On-screen keyboard off" "Tap ⌨ in the bar to turn it back on." 2>/dev/null
+fi
+exit 0

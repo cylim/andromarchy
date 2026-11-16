@@ -12,8 +12,9 @@ grep -rlIZ $'\r' "$O" | xargs -0 -r sed -i 's/\r$//' || true
 sed -i '/^ *bell_sound = /d' "$O/default/hypr/looknfeel.lua"
 
 # ttfx comes from the x86-only Omarchy repo; without it the screensaver loops on "command not found"...
-grep -q 'command -v ttfx >/dev/null || exit_screensaver' "$O/bin/omarchy-screensaver" ||
-  sed -i '/^trap exit_screensaver/a command -v ttfx >/dev/null || exit_screensaver' "$O/bin/omarchy-screensaver"
+[ ! -f "$O/bin/omarchy-screensaver" ] || # (gone from newer Omarchy)
+  grep -q 'command -v ttfx >/dev/null || exit_screensaver' "$O/bin/omarchy-screensaver" ||
+    sed -i '/^trap exit_screensaver/a command -v ttfx >/dev/null || exit_screensaver' "$O/bin/omarchy-screensaver"
 # ...and the idle service's launcher would still open its full-screen terminal for that instant exit: a black blink
 # every idle period. Don't launch it at all.
 grep -q 'command -v ttfx >/dev/null || exit 0' "$O/bin/omarchy-launch-screensaver" ||
@@ -40,6 +41,32 @@ grep -q 'Mobile Apps: your Android apps' "$O/install/user/first-run/welcome.sh" 
 grep -q 'Andromarchy: submenus first' "$O"/shell/plugins/menu/Menu.qml ||
   sed -i '/if (active === "apps") {/{n;s|$|\n          if ((a.kind === "app") !== (b.kind === "app")) return a.kind === "app" ? 1 : -1 // Andromarchy: submenus first|}' \
     "$O"/shell/plugins/menu/Menu.qml
+
+# "omarchy update" (omarchy-update), step by step:
+# - Omarchy itself: its omarchy-update-dev skips /usr/share/omarchy (the omarchy package's place); ours fast-forwards
+#   this checkout (omarchy/omarchy-update-dev-android.sh). Omarchy's own kept as omarchy-update-dev.orig.
+if [ -f /usr/local/share/andromarchy/omarchy-update-dev ] &&
+  ! cmp -s /usr/local/share/andromarchy/omarchy-update-dev "$O/bin/omarchy-update-dev"; then
+  cp -a "$O/bin/omarchy-update-dev" "$O/bin/omarchy-update-dev.orig"
+  install -m 755 /usr/local/share/andromarchy/omarchy-update-dev "$O/bin/omarchy-update-dev"
+fi
+# - the sleep inhibitor: it checks that it was started by /usr/bin/bash through /proc/<pid>/exe, which here is the
+#   glibc loader every program runs under, and refused to run (exit 126): the update stopped right after "Prune
+#   package cache". Nothing to inhibit either: the app holds Android's wake lock.
+printf '#!/bin/bash\n# Android/Andromarchy: the app keeps the tablet awake (see omarchy-android-patches)\nexit 0\n' \
+  > "$O/bin/omarchy-update-stay-awake"
+# - the restart prompt: no kernel package here (Android's kernel), which it read as "the kernel was updated" and
+#   asked to reboot after every update.
+sed -i 's/^\( *\)kernel_updated=true$/\1kernel_updated=false # Andromarchy: Android'"'"'s kernel, never updated here/' \
+  "$O/bin/omarchy-update-restart"
+
+# Install > AI > T3 Code: Omarchy's installer needs FUSE for T3 Code's AppImage, which Android does not give apps; ours
+# installs the package (omarchy/omarchy-install-ai-t3-code-android.sh). Omarchy's own kept as .orig.
+if [ -f /usr/local/share/andromarchy/omarchy-install-ai-t3-code ] && [ -f "$O/bin/omarchy-install-ai-t3-code" ] &&
+  ! cmp -s /usr/local/share/andromarchy/omarchy-install-ai-t3-code "$O/bin/omarchy-install-ai-t3-code"; then
+  cp -a "$O/bin/omarchy-install-ai-t3-code" "$O/bin/omarchy-install-ai-t3-code.orig"
+  install -m 755 /usr/local/share/andromarchy/omarchy-install-ai-t3-code "$O/bin/omarchy-install-ai-t3-code"
+fi
 
 # DNS provider (network panel): no NetworkManager/systemd-resolved here; the rootfs's /etc/resolv.conf is written
 # directly (/usr/local/share/andromarchy/omarchy-dns). Omarchy's own kept as omarchy-dns.orig.

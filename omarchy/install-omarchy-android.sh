@@ -11,7 +11,7 @@ export OMARCHY_PATH=/usr/share/omarchy
 # Desktop core: Quickshell (Omarchy's shell/bar), Qt, fonts, the CLI tools the omarchy-* scripts call.
 pacman -S --noconfirm --needed \
   quickshell qt6-base qt6-declarative qt6-svg qt6-wayland qt6-imageformats qt6-multimedia \
-  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji woff2-font-awesome \
+  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-cjk noto-fonts-emoji woff2-font-awesome \
   foot alacritty xdg-terminal-exec fastfetch starship btop eza bat fzf zoxide ripgrep fd \
   wl-clipboard grim slurp jq gum socat hyprpicker hyprsunset imv mpv tmux neovim lua51 \
   gnome-themes-extra libnotify inotify-tools imagemagick \
@@ -22,8 +22,16 @@ rm -rf "$OMARCHY_PATH"
 cp -a "$SRC" "$OMARCHY_PATH"
 # Our changes to Omarchy's own files, also re-applied after every omarchy-update (post-update hook).
 install -Dm 755 "$(dirname "$0")/../native/omarchy-dns-android.sh" /usr/local/share/andromarchy/omarchy-dns
+install -m 755 "$(dirname "$0")/omarchy-update-dev-android.sh" /usr/local/share/andromarchy/omarchy-update-dev
+install -m 755 "$(dirname "$0")/omarchy-install-ai-t3-code-android.sh" /usr/local/share/andromarchy/omarchy-install-ai-t3-code
 install -m 755 "$(dirname "$0")/omarchy-android-patches.sh" /usr/local/bin/omarchy-android-patches
 omarchy-android-patches
+# Omarchy's package repository and its key ("omarchy update", the Install menus).
+install -m 755 "$(dirname "$0")/andromarchy-omarchy-repo.sh" /usr/local/bin/andromarchy-omarchy-repo
+andromarchy-omarchy-repo
+# Like Omarchy's own install: the migrations of the installed version count as run (the first update replayed all).
+mkdir -p ~/.local/state/omarchy/migrations
+for m in "$OMARCHY_PATH"/migrations/*.sh; do touch ~/.local/state/omarchy/migrations/"${m##*/}"; done
 mkdir -p ~/.config/omarchy/hooks/post-update.d
 printf '#!/bin/bash\n# Andromarchy: re-apply our changes to Omarchy after its update\nomarchy-android-patches\n' \
   > ~/.config/omarchy/hooks/post-update.d/andromarchy
@@ -44,40 +52,9 @@ done
 exec "$@"
 EOF
 # No systemd user session: the app launcher runs "uwsm-app -- gtk-launch x.desktop" (uwsm puts apps in a scope).
-cat > /usr/local/bin/uwsm-app <<'EOF'
-#!/bin/sh
-# Android: no systemd, so no scope. Drop uwsm-app options and run the command as-is.
-while [ $# -gt 0 ]; do
-  case $1 in
-    -s|-a|-u|-d|-t|-S) shift 2 ;;
-    --) shift; break ;;
-    -*) shift ;;
-    *) break ;;
-  esac
-done
-exec "$@"
-EOF
-chmod 755 /usr/local/bin/uwsm-app
-# No systemd: xdg-terminal-exec and omarchy-launch-browser start apps with "systemd-run --user [--scope]", which
-# fails without a running systemd ("Failed to connect to user scope bus"): the config editor and other TUI apps
-# opened and died. Run the command directly: in the foreground with --scope, detached otherwise (like a unit).
-cat > /usr/local/bin/systemd-run <<'EOF'
-#!/bin/sh
-scope=0
-while [ $# -gt 0 ]; do
-  case $1 in
-    --scope) scope=1; shift ;;
-    --*=*) shift ;;
-    -u|-p|-E|-M|--unit|--slice|--property|--description|--setenv|--working-directory|--machine|--uid|--gid|--nice) shift 2 ;;
-    --) shift; break ;;
-    -*) shift ;;
-    *) break ;;
-  esac
-done
-[ $scope = 1 ] && exec "$@"
-setsid "$@" >/dev/null 2>&1 < /dev/null &
-EOF
-chmod 755 /usr/local/bin/systemd-run
+install -m 755 "$(dirname "$0")/uwsm-app-shim.sh" /usr/local/bin/uwsm-app
+# No systemd: xdg-terminal-exec and omarchy-launch-browser start apps with "systemd-run --user [--scope]".
+install -m 755 "$(dirname "$0")/systemd-run-shim.sh" /usr/local/bin/systemd-run
 chmod +x /usr/local/bin/systemd-cat
 
 pacman -S --noconfirm --needed brightnessctl
@@ -103,9 +80,15 @@ grep -q 'resolve_binds_by_sym' ~/.config/hypr/input.lua ||
 grep -q 'disable_watchdog_warning' ~/.config/hypr/input.lua ||
   printf '\n-- Android/Andromarchy: started by the app (SessionService), not start-hyprland\nhl.config({ misc = { disable_watchdog_warning = true } })\n' >> ~/.config/hypr/input.lua
 
+# Touchpad scroll speed. The app sends a keyboard cover's two-finger scroll in Android's display pixels; Omarchy's
+# default factor (0.4, made for libinput's units) was too sensitive with them. In the user's input.lua, to be changed.
+grep -q 'Andromarchy: touchpad scroll speed' ~/.config/hypr/input.lua ||
+  printf '\n-- Android/Andromarchy: touchpad scroll speed (two-finger scroll of a keyboard cover; lower = slower)\nhl.config({ input = { touchpad = { scroll_factor = 0.1 } } })\n' >> ~/.config/hypr/input.lua
+
 # On-screen keyboard: Squeekboard (Phosh's, Arch package). It shows by itself when a text field gets focus
-# (input-method-v2); the bar icon (plugin andromarchy.squeekboard) toggles it. PC-style AZERTY layout with
-# Ctrl/Super/Alt/AltGr/arrows (terminals too), a globe key for the layout list, Omarchy theme colours.
+# (input-method-v2); the bar icon (plugin andromarchy.squeekboard) switches it on and off (squeekboard-toggle).
+# PC-style AZERTY layout with Ctrl/Super/Alt/AltGr/arrows (terminals too), a globe key for the layout list, Omarchy
+# theme colours.
 SQ="$(dirname "$0")/squeekboard"
 pacman -S --noconfirm --needed squeekboard
 install -m755 "$SQ"/squeekboard "$SQ"/squeekboard-toggle "$SQ"/squeekboard-theme "$SQ"/squeekboard-next-layout /usr/local/bin/
@@ -161,8 +144,6 @@ mkdir -p ~/.config/omarchy/themes
 OMARCHY_THEME_HEADLESS=1 omarchy-theme-set "Tokyo Night" || echo "theme-set reported errors (expected for missing apps)"
 
 
-# Default browser: Brave Origin (build-inside.sh installs it; Omarchy's own default is Chromium).
-xdg-settings set default-web-browser brave-origin.desktop || echo "default browser: set it with xdg-settings"
 
 fc-cache -f >/dev/null
 echo "Omarchy installed in $OMARCHY_PATH"

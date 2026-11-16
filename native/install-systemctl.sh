@@ -27,6 +27,80 @@ sed -i 's/^                        elif not os.listdir(filepath):$/             
 grep -q 'delay = conf.get(section, "RestartSec", default or strE(DefaultRestartSec))' "$T/systemctl"
 sed -i 's/delay = conf.get(section, "RestartSec", default or strE(DefaultRestartSec))/delay = conf.get(section, "RestartSec", default or "100ms")/' "$T/systemctl"
 
+# Services start with only stdin/stdout/stderr, as under systemd: every other descriptor the caller had open (fd 3 and
+# up) is dropped when the service's program starts. They were inherited: Superwhisper, started by an Omarchy
+# migration during "omarchy update", kept the update's lock file open, and every later update stopped with
+# "An Omarchy update is already running". Marked close-on-exec rather than closed: the stand-in's own files (journal
+# log...) and the preloaded runtime's keep working until the exec.
+python3 - "$T/systemctl" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = """        self.dup2_journal_log(conf)
+        cmd_args: List[Union[str, bytes]] = []
+"""
+assert s.count(anchor) == 1, "execve_from changed upstream"
+s = s.replace(anchor, """        self.dup2_journal_log(conf)
+        drop_inherited_fds()
+        cmd_args: List[Union[str, bytes]] = []
+""")
+helper = """def drop_inherited_fds() -> None:
+    \"\"\" Andromarchy: like systemd, a service gets no descriptor of its caller beyond 0-2 (close-on-exec) \"\"\"
+    try:
+        fds = [int(fd) for fd in os.listdir("/proc/self/fd")]
+    except (OSError, ValueError):
+        fds = list(range(3, 1024))
+    for fd in fds:
+        if fd > 2:
+            try:
+                os.set_inheritable(fd, False)
+            except OSError:
+                pass
+
+def exec_path(cmd: str)"""
+assert s.count("def exec_path(cmd: str)") == 1
+s = s.replace("def exec_path(cmd: str)", helper, 1)
+open(p, "w").write(s)
+PY
+
+# A recorded process id that now belongs to another Android app (kill: EPERM) is not our service: Android reuses ids
+# across all apps, and ours only ever run as this app's user. Counted as running, a service whose id was taken was
+# never started again (Superwhisper after the app restarted: "active", with no daemon).
+grep -q "            # EPERM clearly means there's a process to deny access to" "$T/systemctl"
+python3 - "$T/systemctl" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """        elif err.errno == errno.EPERM:
+            # EPERM clearly means there's a process to deny access to
+            return True"""
+assert s.count(old) == 1, "_pid_exists changed upstream"
+open(p, "w").write(s.replace(old, """        elif err.errno == errno.EPERM:
+            # Andromarchy: another app's process (ours all run as this app's user)
+            return False
+        elif err.errno == errno.EACCES:
+            # one of ours that this caller may not signal (SELinux: a "run-as" debugging shell): it exists
+            return True"""))
+PY
+
+# The session's services ("systemctl --user init", started with Hyprland) include those enabled for
+# graphical-session.target, which a desktop session reaches under systemd (uwsm starts it): the stand-in only knew
+# default.target, and such a service (Superwhisper) was never started with the session.
+python3 - "$T/systemctl" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """        targets = [target]
+        conf = self.get_target_conf(module)
+"""
+assert s.count(old) == 1, "get_target_list changed upstream"
+open(p, "w").write(s.replace(old, """        targets = [target]
+        if target == "default.target" and self.user_mode():
+            targets = [target, "graphical-session.target"] # Andromarchy: the session is the graphical session
+        conf = self.get_target_conf(module)
+"""))
+PY
+
 mkdir -p "$D" "$X"
 # systemctl itself is a wrapper (native/systemctl-wrapper.sh): power verbs go to the app.
 install -m 755 "$T/systemctl" "$X/systemctl"

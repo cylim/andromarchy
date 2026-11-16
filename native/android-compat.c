@@ -4,9 +4,11 @@
 //     Quickshell's relaunch...) look in the glibc dir. Answer with the real program, from argv[0].
 //  2. every /proc/*/{fd/N,cwd,exe} link: the kernel answers HOST paths (/data/data/.../rootfs/usr/...). A real
 //     chroot shows /usr/...; with the prefix, fakechroot prepends it again when the path is reused.
-// Build (rootfs): gcc -O2 -shared -fPIC -o android-compat.so android-compat.c go-syscalls.c -ldl
+// Build (rootfs): gcc -O2 -shared -fPIC -o android-compat.so android-compat.c go-syscalls.c android-ifaddrs.c -ldl
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <sys/syscall.h>
 #include <sys/prctl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -120,10 +122,32 @@ static void chromium_no_sandbox(int argc, char **argv)
     free(av);
 }
 
+// 7d. Firefox's sandbox (Zen, LibreWolf...). The launcher turns it off for the whole session (MOZ_DISABLE_*_SANDBOX),
+//     because it could not work before this library handed its traps over (go-syscalls.c). A rootfs whose library
+//     does carries /opt/lotfix/firefox-sandbox: take the switches out of every program's environment, so the sandbox
+//     is on from the next program started, whatever the app's version and without a new session. (The session's
+//     environment is fixed when it starts: with the mark made later, by andromarchy-refresh, Zen kept saying
+//     "The security sandbox is disabled" until the app was restarted.)
+static void firefox_sandbox_env(void)
+{
+    if (!rootfs_base || !getenv("MOZ_DISABLE_CONTENT_SANDBOX"))
+        return;
+    char mark[4096];
+    snprintf(mark, sizeof mark, "%s/opt/lotfix/firefox-sandbox", rootfs_base);
+    if (syscall(SYS_faccessat, AT_FDCWD, mark, F_OK) != 0) // host path, raw: fakechroot would prefix it again
+        return;
+    unsetenv("MOZ_DISABLE_CONTENT_SANDBOX");
+    unsetenv("MOZ_DISABLE_RDD_SANDBOX");
+    unsetenv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX");
+    unsetenv("MOZ_DISABLE_GMP_SANDBOX");
+    unsetenv("MOZ_DISABLE_UTILITY_SANDBOX");
+}
+
 __attribute__((constructor)) static void android_compat_init(int argc, char **argv, char **envp)
 {
     (void)envp;
     rootfs_base = getenv("FAKECHROOT_BASE");
+    firefox_sandbox_env();
     chromium_no_sandbox(argc, argv);
     go_syscalls_init(program_invocation_name, main_program()); // path base for every process, Go trap for Go
     if (program_invocation_name && program_invocation_name[0] == '/') {
@@ -452,6 +476,51 @@ static int fake_sys(const char *p, char *buf, size_t sz)
 static int cpuinfo_rewrite(void); // /proc/cpuinfo without SVE-implying core names (below)
 
 // Contents for a denied /proc file, or -1 to pass the path through.
+// /proc/net/route and /proc/net/ipv6_route: denied to apps, and a table without routes reads as "no network" to
+// programs that look for a default route there (Superwhisper: "Can't reach Superwhisper Cloud", model downloads
+// "waiting" for ever). The kernel's own table cannot be read; say what is true of it: a default route through the
+// interface that carries an address of that family (the Wi-Fi one first), none when there is no such interface.
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+
+static int net_routes(int v6, char *buf, size_t sz)
+{
+    int n = v6 ? 0 : snprintf(buf, sz, "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n");
+    struct ifaddrs *list = NULL, *best = NULL;
+    if (getifaddrs(&list) != 0)
+        return n;
+    for (struct ifaddrs *i = list; i; i = i->ifa_next) {
+        if (!i->ifa_addr || !i->ifa_name || !(i->ifa_flags & IFF_UP) || (i->ifa_flags & IFF_LOOPBACK))
+            continue;
+        if (i->ifa_addr->sa_family != (v6 ? AF_INET6 : AF_INET))
+            continue;
+        if (v6) { // a routable address only: every interface has a link-local one
+            struct in6_addr *a = &((struct sockaddr_in6 *)i->ifa_addr)->sin6_addr;
+            if (IN6_IS_ADDR_LINKLOCAL(a) || IN6_IS_ADDR_LOOPBACK(a) || strncmp(i->ifa_name, "if", 2) == 0)
+                continue;
+        }
+        int wired = strncmp(i->ifa_name, "wlan", 4) == 0 || strncmp(i->ifa_name, "eth", 3) == 0;
+        if (!best || (wired && strncmp(best->ifa_name, "wlan", 4) != 0 && strncmp(best->ifa_name, "eth", 3) != 0))
+            best = i;
+    }
+    if (best && !v6) {
+        // the gateway's address is not known to apps: the first host of the interface's network, as on most networks
+        uint32_t addr = ((struct sockaddr_in *)best->ifa_addr)->sin_addr.s_addr;
+        uint32_t mask = best->ifa_netmask ? ((struct sockaddr_in *)best->ifa_netmask)->sin_addr.s_addr : htonl(0xffffff00);
+        uint32_t gw = (addr & mask) | htonl(1);
+        n += snprintf(buf + n, sz - n, "%s\t00000000\t%08X\t0003\t0\t0\t0\t00000000\t0\t0\t0\n", best->ifa_name, gw);
+        if (n < (int)sz)
+            n += snprintf(buf + n, sz - n, "%s\t%08X\t00000000\t0001\t0\t0\t0\t%08X\t0\t0\t0\n", best->ifa_name, addr & mask, mask);
+    } else if (best) {
+        n += snprintf(buf + n, sz - n, "00000000000000000000000000000000 00 00000000000000000000000000000000 00 "
+                                       "fe800000000000000000000000000001 00000400 00000001 00000000 00000003 %8s\n",
+                      best->ifa_name);
+    }
+    freeifaddrs(list);
+    return n < (int)sz ? n : (int)sz - 1; // (snprintf counts what did not fit)
+}
+
 static int fake_proc(const char *p, char *buf, size_t sz)
 {
     static const char *const fixed[][2] = {
@@ -465,7 +534,6 @@ static int fake_proc(const char *p, char *buf, size_t sz)
         {"net/dev", "Inter-|   Receive                                                |  Transmit\n"
                     " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop "
                     "fifo colls carrier compressed\n"},
-        {"net/route", "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"},
         {"net/arp", "IP address       HW type     Flags       HW address            Mask     Device\n"},
         {"net/tcp", "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"},
         {"net/udp", "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"},
@@ -499,6 +567,8 @@ static int fake_proc(const char *p, char *buf, size_t sz)
     struct sysinfo si;
     struct utsname u;
     clock_gettime(CLOCK_BOOTTIME, &t);
+    if (strcmp(p, "net/route") == 0 || strcmp(p, "net/ipv6_route") == 0)
+        return net_routes(p[4] == 'i', buf, sz);
     if (strcmp(p, "uptime") == 0)
         return snprintf(buf, sz, "%ld.%02ld 0.00\n", (long)t.tv_sec, t.tv_nsec / 10000000);
     if (strcmp(p, "stat") == 0)
@@ -1362,6 +1432,71 @@ static int has_var(char *const envp[], const char *name)
     return 0;
 }
 
+// LD_PRELOAD entries given by name only ("libmozsandbox.so", which Firefox adds for its child processes) are searched
+// by the loader in LD_LIBRARY_PATH, which holds guest paths (/opt/zen-browser-bin) while the loader runs on Android's
+// filesystem: "cannot be preloaded", and Firefox's sandbox, which needs that library, could not start. Give such
+// entries their full host path; entries given as guest paths too. Returns a new "LD_PRELOAD=..." string, or NULL when there is nothing to change.
+static char *preload_with_paths(char *const envp[])
+{
+    const char *preload = NULL, *libpath = NULL, *base = rootfs_base;
+    for (int i = 0; envp && envp[i]; i++) {
+        if (strncmp(envp[i], "LD_PRELOAD=", 11) == 0)
+            preload = envp[i] + 11;
+        else if (strncmp(envp[i], "LD_LIBRARY_PATH=", 16) == 0)
+            libpath = envp[i] + 16;
+    }
+    if (!preload || !libpath || !base)
+        return NULL;
+    size_t cap = strlen(preload) + 12, used, changed = 0;
+    for (const char *p = preload; *p; p++)
+        if (*p == ':' || *p == ' ')
+            cap += 4096;
+    cap += 4096;
+    char *out = malloc(cap);
+    if (!out)
+        return NULL;
+    used = (size_t)sprintf(out, "LD_PRELOAD=");
+    for (const char *p = preload; *p;) {
+        size_t n = strcspn(p, ": ");
+        int found = 0;
+        size_t bl = strlen(base);
+        if (n && p[0] == '/' && n < 4096 && !(n > bl && strncmp(p, base, bl) == 0 && p[bl] == '/')) {
+            // A full guest path ("/usr/lib/libgtk4-layer-shell.so.0", which Superwhisper preloads into its recording
+            // indicator): the host path of the same file.
+            char guest[4096];
+            snprintf(guest, sizeof guest, "%.*s", (int)n, p);
+            if (access(guest, R_OK) == 0) {
+                used += (size_t)snprintf(out + used, cap - used, "%s%s", base, guest);
+                found = changed = 1;
+            }
+        } else if (n && !memchr(p, '/', n)) {
+            for (const char *d = libpath; *d && !found;) {
+                size_t dn = strcspn(d, ":");
+                char guest[4096];
+                if (dn && d[0] == '/' && dn + n + 2 < sizeof guest) {
+                    snprintf(guest, sizeof guest, "%.*s/%.*s", (int)dn, d, (int)n, p);
+                    if (access(guest, R_OK) == 0) { // fakechroot resolves the guest path
+                        int at_base = strncmp(guest, base, strlen(base)) == 0;
+                        used += (size_t)snprintf(out + used, cap - used, "%s%s", at_base ? "" : base, guest);
+                        found = changed = 1;
+                    }
+                }
+                d += dn + (d[dn] == ':');
+            }
+        }
+        if (!found)
+            used += (size_t)snprintf(out + used, cap - used, "%.*s", (int)n, p);
+        p += n;
+        if (*p)
+            out[used++] = *p++, out[used] = 0;
+    }
+    if (!changed) {
+        free(out);
+        return NULL;
+    }
+    return out;
+}
+
 int execve(const char *path, char *const argv[], char *const envp[])
 {
     static int (*next)(const char *, char *const[], char *const[]);
@@ -1371,8 +1506,9 @@ int execve(const char *path, char *const argv[], char *const envp[])
     while (envp && envp[n])
         n++;
     char *env[n + N_RUNTIME + 1];
+    char *preload = preload_with_paths(envp); // (not freed: we exec, or the caller's exec failed)
     for (size_t i = 0; i < n; i++)
-        env[i] = envp[i];
+        env[i] = preload && strncmp(envp[i], "LD_PRELOAD=", 11) == 0 ? preload : envp[i];
     for (size_t i = 0; i < N_RUNTIME; i++) {
         if (runtime_env[i] && !has_var(envp, runtime_vars[i]))
             env[n++] = runtime_env[i];
@@ -1981,6 +2117,31 @@ int socket(int domain, int type, int protocol)
     if (!next)
         next = dlsym(RTLD_NEXT, "socket");
     return next(domain, type, protocol);
+}
+
+// Empty writes with a pointer outside the address space: the kernel checks the buffer's address even for 0 bytes.
+// V8 (Node, Electron) gives an empty buffer a fixed address at the end of its 1 TB pointer cage, which lies beyond
+// the 39-bit address space of Android kernels: write() failed with EFAULT where a desktop kernel (48 bits) returns
+// 0. T3 Code's server wrote an empty file at startup and exited. Same call, with an address that exists.
+ssize_t write(int fd, const void *buf, size_t n)
+{
+    static ssize_t (*next)(int, const void *, size_t);
+    if (!next)
+        next = dlsym(RTLD_NEXT, "write");
+    return next(fd, n ? buf : "", n);
+}
+
+ssize_t pwrite(int fd, const void *buf, size_t n, off_t off)
+{
+    static ssize_t (*next)(int, const void *, size_t, off_t);
+    if (!next)
+        next = dlsym(RTLD_NEXT, "pwrite");
+    return next(fd, n ? buf : "", n, off);
+}
+
+ssize_t pwrite64(int fd, const void *buf, size_t n, off_t off)
+{
+    return pwrite(fd, buf, n, off);
 }
 
 // DRM_IOCTL_VERSION on Qualcomm's KGSL GPU device: Android gives apps no DRM render node, but Mesa allocates GBM

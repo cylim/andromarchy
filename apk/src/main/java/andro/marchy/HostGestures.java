@@ -9,7 +9,7 @@ import android.util.Log;
 /**
  * HyperOS/MIUI take multi-finger swipes for themselves (app switching) and steal them from the desktop's gestures;
  * they also restore that setting after a restart. When the user granted WRITE_SECURE_SETTINGS once
- * (adb shell pm grant andro.marchy android.permission.WRITE_SECURE_SETTINGS, see docs/user-guide.md), turn them off
+ * (adb shell pm grant app.jrny.omarchy android.permission.WRITE_SECURE_SETTINGS, see docs/user-guide.md), turn them off
  * at every start. Without the permission: nothing, the user's Android settings are theirs.
  */
 final class HostGestures {

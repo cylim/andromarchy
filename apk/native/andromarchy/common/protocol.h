@@ -77,6 +77,9 @@ struct buf_info {
 
 
 
+#define POINTER_AXIS_SOURCE_WHEEL  0 /* a mouse wheel: value in wheel units (10 = one click) */
+#define POINTER_AXIS_SOURCE_FINGER 1 /* a touchpad's two-finger scroll: value in pixels, 0 = the fingers left */
+
 struct InputEvent {
     uint32_t type;
     union {
@@ -104,6 +107,7 @@ struct InputEvent {
             uint32_t axis;
             float    value;
             int32_t  discrete;
+            uint32_t source; // POINTER_AXIS_SOURCE_*; a backend older than this field ignores it (a wheel)
         } pointer_axis;
         struct {
             uint32_t refresh_mhz; // current display refresh rate, milli-Hz

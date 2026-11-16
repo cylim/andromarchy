@@ -15,7 +15,9 @@ android {
     }
 
     defaultConfig {
-        applicationId = "andro.marchy" // short: the app's files path ends up in 108-byte Unix socket paths
+        // Our own id, with our own signing key: a build signed with another key cannot update upstream's andro.marchy,
+        // and the two install side by side. Short: the app's files path ends up in 108-byte Unix socket paths.
+        applicationId = "app.jrny.omarchy"
         // targetSdk 28: Android only lets apps targeting <= 28 execute files from their own data dir (W^X), which
         // running the Arch rootfs needs. Hence distribution outside the Play Store.
         // Android 11+: the Andromarchy native code needs API 30 (memfd_create). minSdk above targetSdk only draws a
