@@ -43,5 +43,13 @@ if ! pacman-key --list-keys $KEY >/dev/null 2>&1; then
   pacman-key --lsign-key $KEY
 fi
 pacman -Syy --noconfirm
+# Once, when the system comes from the rolling mirror: its packages newer than the snapshot go back to the snapshot's
+# versions, as Omarchy does when it changes channel (-Syyuu). Left newer, their siblings could not be installed
+# ("installing pipewire (1.6.9) breaks dependency 'pipewire=1.6.10'": an Omarchy migration stopped the update there).
+# hyprutils stays: our Hyprland is built against the one installed.
+if [ ! -e /var/lib/andromarchy/stable-channel ]; then
+  pacman -Suu --noconfirm --ignore hyprutils
+  mkdir -p /var/lib/andromarchy && touch /var/lib/andromarchy/stable-channel
+fi
 # pacman-contrib: paccache, which "omarchy update" prunes the package cache with.
 pacman -S --noconfirm --needed omarchy-keyring pacman-contrib
