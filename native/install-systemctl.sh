@@ -63,6 +63,44 @@ s = s.replace("def exec_path(cmd: str)", helper, 1)
 open(p, "w").write(s)
 PY
 
+# A recorded process id that now belongs to another Android app (kill: EPERM) is not our service: Android reuses ids
+# across all apps, and ours only ever run as this app's user. Counted as running, a service whose id was taken was
+# never started again (Superwhisper after the app restarted: "active", with no daemon).
+grep -q "            # EPERM clearly means there's a process to deny access to" "$T/systemctl"
+python3 - "$T/systemctl" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """        elif err.errno == errno.EPERM:
+            # EPERM clearly means there's a process to deny access to
+            return True"""
+assert s.count(old) == 1, "_pid_exists changed upstream"
+open(p, "w").write(s.replace(old, """        elif err.errno == errno.EPERM:
+            # Andromarchy: another app's process (ours all run as this app's user)
+            return False
+        elif err.errno == errno.EACCES:
+            # one of ours that this caller may not signal (SELinux: a "run-as" debugging shell): it exists
+            return True"""))
+PY
+
+# The session's services ("systemctl --user init", started with Hyprland) include those enabled for
+# graphical-session.target, which a desktop session reaches under systemd (uwsm starts it): the stand-in only knew
+# default.target, and such a service (Superwhisper) was never started with the session.
+python3 - "$T/systemctl" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+old = """        targets = [target]
+        conf = self.get_target_conf(module)
+"""
+assert s.count(old) == 1, "get_target_list changed upstream"
+open(p, "w").write(s.replace(old, """        targets = [target]
+        if target == "default.target" and self.user_mode():
+            targets = [target, "graphical-session.target"] # Andromarchy: the session is the graphical session
+        conf = self.get_target_conf(module)
+"""))
+PY
+
 mkdir -p "$D" "$X"
 # systemctl itself is a wrapper (native/systemctl-wrapper.sh): power verbs go to the app.
 install -m 755 "$T/systemctl" "$X/systemctl"

@@ -18,6 +18,11 @@ if [[ $loc != C.UTF-8 && ! -d /usr/lib/locale/$loc ]]; then
   [ -f "/usr/share/i18n/locales/$base" ] && localedef --no-archive -i "$base" -f UTF-8 "/usr/lib/locale/$loc" || true
 fi
 
+# A new session: no service of the systemctl stand-in is running yet, whatever its status files of the previous
+# session say (they keep process ids, which Android has since given to other programs: a service "active" under a
+# reused id was not started again). Not while a session's services are up (the app restarted alone).
+pgrep -f 'pytho[n].*systemctl --user init' >/dev/null || rm -f /tmp/run-"$(id -u)"/run/*.status 2>/dev/null
+
 [ -f "$done_mark" ] && exit 0
 
 # The app's uid is the only user: give it /root and bash (otherwise shells and terminals get /sbin/nologin).

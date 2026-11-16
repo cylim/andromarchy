@@ -476,6 +476,51 @@ static int fake_sys(const char *p, char *buf, size_t sz)
 static int cpuinfo_rewrite(void); // /proc/cpuinfo without SVE-implying core names (below)
 
 // Contents for a denied /proc file, or -1 to pass the path through.
+// /proc/net/route and /proc/net/ipv6_route: denied to apps, and a table without routes reads as "no network" to
+// programs that look for a default route there (Superwhisper: "Can't reach Superwhisper Cloud", model downloads
+// "waiting" for ever). The kernel's own table cannot be read; say what is true of it: a default route through the
+// interface that carries an address of that family (the Wi-Fi one first), none when there is no such interface.
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+
+static int net_routes(int v6, char *buf, size_t sz)
+{
+    int n = v6 ? 0 : snprintf(buf, sz, "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n");
+    struct ifaddrs *list = NULL, *best = NULL;
+    if (getifaddrs(&list) != 0)
+        return n;
+    for (struct ifaddrs *i = list; i; i = i->ifa_next) {
+        if (!i->ifa_addr || !i->ifa_name || !(i->ifa_flags & IFF_UP) || (i->ifa_flags & IFF_LOOPBACK))
+            continue;
+        if (i->ifa_addr->sa_family != (v6 ? AF_INET6 : AF_INET))
+            continue;
+        if (v6) { // a routable address only: every interface has a link-local one
+            struct in6_addr *a = &((struct sockaddr_in6 *)i->ifa_addr)->sin6_addr;
+            if (IN6_IS_ADDR_LINKLOCAL(a) || IN6_IS_ADDR_LOOPBACK(a) || strncmp(i->ifa_name, "if", 2) == 0)
+                continue;
+        }
+        int wired = strncmp(i->ifa_name, "wlan", 4) == 0 || strncmp(i->ifa_name, "eth", 3) == 0;
+        if (!best || (wired && strncmp(best->ifa_name, "wlan", 4) != 0 && strncmp(best->ifa_name, "eth", 3) != 0))
+            best = i;
+    }
+    if (best && !v6) {
+        // the gateway's address is not known to apps: the first host of the interface's network, as on most networks
+        uint32_t addr = ((struct sockaddr_in *)best->ifa_addr)->sin_addr.s_addr;
+        uint32_t mask = best->ifa_netmask ? ((struct sockaddr_in *)best->ifa_netmask)->sin_addr.s_addr : htonl(0xffffff00);
+        uint32_t gw = (addr & mask) | htonl(1);
+        n += snprintf(buf + n, sz - n, "%s\t00000000\t%08X\t0003\t0\t0\t0\t00000000\t0\t0\t0\n", best->ifa_name, gw);
+        if (n < (int)sz)
+            n += snprintf(buf + n, sz - n, "%s\t%08X\t00000000\t0001\t0\t0\t0\t%08X\t0\t0\t0\n", best->ifa_name, addr & mask, mask);
+    } else if (best) {
+        n += snprintf(buf + n, sz - n, "00000000000000000000000000000000 00 00000000000000000000000000000000 00 "
+                                       "fe800000000000000000000000000001 00000400 00000001 00000000 00000003 %8s\n",
+                      best->ifa_name);
+    }
+    freeifaddrs(list);
+    return n < (int)sz ? n : (int)sz - 1; // (snprintf counts what did not fit)
+}
+
 static int fake_proc(const char *p, char *buf, size_t sz)
 {
     static const char *const fixed[][2] = {
@@ -489,7 +534,6 @@ static int fake_proc(const char *p, char *buf, size_t sz)
         {"net/dev", "Inter-|   Receive                                                |  Transmit\n"
                     " face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop "
                     "fifo colls carrier compressed\n"},
-        {"net/route", "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"},
         {"net/arp", "IP address       HW type     Flags       HW address            Mask     Device\n"},
         {"net/tcp", "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"},
         {"net/udp", "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"},
@@ -523,6 +567,8 @@ static int fake_proc(const char *p, char *buf, size_t sz)
     struct sysinfo si;
     struct utsname u;
     clock_gettime(CLOCK_BOOTTIME, &t);
+    if (strcmp(p, "net/route") == 0 || strcmp(p, "net/ipv6_route") == 0)
+        return net_routes(p[4] == 'i', buf, sz);
     if (strcmp(p, "uptime") == 0)
         return snprintf(buf, sz, "%ld.%02ld 0.00\n", (long)t.tv_sec, t.tv_nsec / 10000000);
     if (strcmp(p, "stat") == 0)
@@ -1389,7 +1435,7 @@ static int has_var(char *const envp[], const char *name)
 // LD_PRELOAD entries given by name only ("libmozsandbox.so", which Firefox adds for its child processes) are searched
 // by the loader in LD_LIBRARY_PATH, which holds guest paths (/opt/zen-browser-bin) while the loader runs on Android's
 // filesystem: "cannot be preloaded", and Firefox's sandbox, which needs that library, could not start. Give such
-// entries their full host path. Returns a new "LD_PRELOAD=..." string, or NULL when there is nothing to change.
+// entries their full host path; entries given as guest paths too. Returns a new "LD_PRELOAD=..." string, or NULL when there is nothing to change.
 static char *preload_with_paths(char *const envp[])
 {
     const char *preload = NULL, *libpath = NULL, *base = rootfs_base;
@@ -1413,7 +1459,17 @@ static char *preload_with_paths(char *const envp[])
     for (const char *p = preload; *p;) {
         size_t n = strcspn(p, ": ");
         int found = 0;
-        if (n && !memchr(p, '/', n)) {
+        size_t bl = strlen(base);
+        if (n && p[0] == '/' && n < 4096 && !(n > bl && strncmp(p, base, bl) == 0 && p[bl] == '/')) {
+            // A full guest path ("/usr/lib/libgtk4-layer-shell.so.0", which Superwhisper preloads into its recording
+            // indicator): the host path of the same file.
+            char guest[4096];
+            snprintf(guest, sizeof guest, "%.*s", (int)n, p);
+            if (access(guest, R_OK) == 0) {
+                used += (size_t)snprintf(out + used, cap - used, "%s%s", base, guest);
+                found = changed = 1;
+            }
+        } else if (n && !memchr(p, '/', n)) {
             for (const char *d = libpath; *d && !found;) {
                 size_t dn = strcspn(d, ":");
                 char guest[4096];
