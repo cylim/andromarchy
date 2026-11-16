@@ -60,6 +60,8 @@ if [ ! -e /var/lib/andromarchy/brave-not-preinstalled ]; then
 fi
 
 echo "Compositor backend (touchpad scrolling)"
+grep -q 'Andromarchy: touchpad scroll speed' ~/.config/hypr/input.lua ||
+  printf '\n-- Android/Andromarchy: touchpad scroll speed (two-finger scroll of a keyboard cover; lower = slower)\nhl.config({ input = { touchpad = { scroll_factor = 0.2 } } })\n' >> ~/.config/hypr/input.lua
 bash "$SRC"/native/andromarchy-aquamarine.sh "$SRC"/patches/aquamarine
 
 # Omarchy itself on the release this project follows (the downloaded image may hold a development snapshot).

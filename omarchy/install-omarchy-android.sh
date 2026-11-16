@@ -80,6 +80,11 @@ grep -q 'resolve_binds_by_sym' ~/.config/hypr/input.lua ||
 grep -q 'disable_watchdog_warning' ~/.config/hypr/input.lua ||
   printf '\n-- Android/Andromarchy: started by the app (SessionService), not start-hyprland\nhl.config({ misc = { disable_watchdog_warning = true } })\n' >> ~/.config/hypr/input.lua
 
+# Touchpad scroll speed. The app sends a keyboard cover's two-finger scroll in Android's display pixels; Omarchy's
+# default factor (0.4, made for libinput's units) was too sensitive with them. In the user's input.lua, to be changed.
+grep -q 'Andromarchy: touchpad scroll speed' ~/.config/hypr/input.lua ||
+  printf '\n-- Android/Andromarchy: touchpad scroll speed (two-finger scroll of a keyboard cover; lower = slower)\nhl.config({ input = { touchpad = { scroll_factor = 0.2 } } })\n' >> ~/.config/hypr/input.lua
+
 # On-screen keyboard: Squeekboard (Phosh's, Arch package). It shows by itself when a text field gets focus
 # (input-method-v2); the bar icon (plugin andromarchy.squeekboard) switches it on and off (squeekboard-toggle).
 # PC-style AZERTY layout with Ctrl/Super/Alt/AltGr/arrows (terminals too), a globe key for the layout list, Omarchy
