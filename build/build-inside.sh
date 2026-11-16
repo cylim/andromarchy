@@ -70,7 +70,11 @@ pacman -Rns --noconfirm rust
 
 # Omarchy.
 rm -rf /tmp/omarchy
-rm -rf /tmp/omarchy && git clone -q --depth 1 ${OMARCHY_REF:+-b "$OMARCHY_REF"} https://github.com/basecamp/omarchy /tmp/omarchy
+# The newest release (vX.Y.Z tag), which goes with the stable package channel; "omarchy update" follows releases
+# too (omarchy/omarchy-update-dev-android.sh).
+OMARCHY_REF=${OMARCHY_REF:-$(git ls-remote --tags --refs https://github.com/basecamp/omarchy 'v*' |
+  sed -n 's|.*refs/tags/\(v[0-9][0-9.]*\)$|\1|p' | sort -V | tail -1)}
+rm -rf /tmp/omarchy && git clone -q --depth 1 -b "$OMARCHY_REF" https://github.com/basecamp/omarchy /tmp/omarchy
 git -C /tmp/omarchy log -1 --format='omarchy %H %cd' > /etc/lotfix-omarchy-version
 bash $L/omarchy/install-omarchy-android.sh /tmp/omarchy
 # systemctl without systemd (user services, Restart=), ahead of systemd's own in /usr/local/bin.
@@ -165,7 +169,8 @@ rm -rf /tmp/wtype && git clone -q https://github.com/atx/wtype /tmp/wtype && git
     X=protocol/virtual-keyboard-unstable-v1.xml &&
     wayland-scanner client-header $X virtual-keyboard-unstable-v1-client-protocol.h && wayland-scanner private-code $X vk.c &&
     gcc -O2 -I. -o /usr/local/bin/wtype main.c vk.c $(pkg-config --cflags --libs wayland-client xkbcommon)) && rm -rf /tmp/wtype
-gcc -O2 -shared -fPIC -o /opt/lotfix/android-compat.so $L/native/android-compat.c $L/native/go-syscalls.c -ldl
+gcc -O2 -shared -fPIC -o /opt/lotfix/android-compat.so $L/native/android-compat.c $L/native/go-syscalls.c \
+  $L/native/android-ifaddrs.c -ldl
 # glibc reads locales internally from LOCPATH, which ignores locale-archive: one directory per locale.
 localedef --no-archive -i en_US -f UTF-8 /usr/lib/locale/en_US.UTF-8
 

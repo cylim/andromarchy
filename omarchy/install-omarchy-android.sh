@@ -22,8 +22,15 @@ rm -rf "$OMARCHY_PATH"
 cp -a "$SRC" "$OMARCHY_PATH"
 # Our changes to Omarchy's own files, also re-applied after every omarchy-update (post-update hook).
 install -Dm 755 "$(dirname "$0")/../native/omarchy-dns-android.sh" /usr/local/share/andromarchy/omarchy-dns
+install -m 755 "$(dirname "$0")/omarchy-update-dev-android.sh" /usr/local/share/andromarchy/omarchy-update-dev
 install -m 755 "$(dirname "$0")/omarchy-android-patches.sh" /usr/local/bin/omarchy-android-patches
 omarchy-android-patches
+# Omarchy's package repository and its key ("omarchy update", the Install menus).
+install -m 755 "$(dirname "$0")/andromarchy-omarchy-repo.sh" /usr/local/bin/andromarchy-omarchy-repo
+andromarchy-omarchy-repo
+# Like Omarchy's own install: the migrations of the installed version count as run (the first update replayed all).
+mkdir -p ~/.local/state/omarchy/migrations
+for m in "$OMARCHY_PATH"/migrations/*.sh; do touch ~/.local/state/omarchy/migrations/"${m##*/}"; done
 mkdir -p ~/.config/omarchy/hooks/post-update.d
 printf '#!/bin/bash\n# Andromarchy: re-apply our changes to Omarchy after its update\nomarchy-android-patches\n' \
   > ~/.config/omarchy/hooks/post-update.d/andromarchy
@@ -104,8 +111,9 @@ grep -q 'disable_watchdog_warning' ~/.config/hypr/input.lua ||
   printf '\n-- Android/Andromarchy: started by the app (SessionService), not start-hyprland\nhl.config({ misc = { disable_watchdog_warning = true } })\n' >> ~/.config/hypr/input.lua
 
 # On-screen keyboard: Squeekboard (Phosh's, Arch package). It shows by itself when a text field gets focus
-# (input-method-v2); the bar icon (plugin andromarchy.squeekboard) toggles it. PC-style AZERTY layout with
-# Ctrl/Super/Alt/AltGr/arrows (terminals too), a globe key for the layout list, Omarchy theme colours.
+# (input-method-v2); the bar icon (plugin andromarchy.squeekboard) switches it on and off (squeekboard-toggle).
+# PC-style AZERTY layout with Ctrl/Super/Alt/AltGr/arrows (terminals too), a globe key for the layout list, Omarchy
+# theme colours.
 SQ="$(dirname "$0")/squeekboard"
 pacman -S --noconfirm --needed squeekboard
 install -m755 "$SQ"/squeekboard "$SQ"/squeekboard-toggle "$SQ"/squeekboard-theme "$SQ"/squeekboard-next-layout /usr/local/bin/
