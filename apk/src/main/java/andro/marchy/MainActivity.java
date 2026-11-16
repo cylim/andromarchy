@@ -712,7 +712,13 @@ public class MainActivity extends Activity
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                     && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                             != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1003);
+                // Once per process: Android answers a request for a permission the user refused at once, through
+                // a pause and a resume, and asking again on every resume looped (the screen blinked, the display
+                // reconnected several times a second, and the microphone/camera prompt was cancelled each time).
+                if (!notificationsAsked) {
+                    notificationsAsked = true;
+                    requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1003);
+                }
             } else {
                 showSettingsNotification();
             }
@@ -966,6 +972,7 @@ public class MainActivity extends Activity
 
     /** Microphone, camera and location in ONE prompt: a second request while the first dialog shows is cancelled. */
     private boolean devicePermissionsAsked;
+    private static boolean notificationsAsked; // per process: the activity is recreated on rotation
 
     private void requestDevicePermissions() {
         if (devicePermissionsAsked)
@@ -1015,6 +1022,8 @@ public class MainActivity extends Activity
     public void onRequestPermissionsResult(int requestCode, String[] permissions,
                                            int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQ_RECORD_AUDIO && permissions.length == 0)
+            devicePermissionsAsked = false; // cancelled by another prompt (notifications): asked again on resume
         if (requestCode == REQ_RECORD_AUDIO || requestCode == REQ_CAMERA) {
             for (int i = 0; i < permissions.length && i < grantResults.length; i++) {
                 boolean granted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
