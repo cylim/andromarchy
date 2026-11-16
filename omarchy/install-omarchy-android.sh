@@ -11,7 +11,7 @@ export OMARCHY_PATH=/usr/share/omarchy
 # Desktop core: Quickshell (Omarchy's shell/bar), Qt, fonts, the CLI tools the omarchy-* scripts call.
 pacman -S --noconfirm --needed \
   quickshell qt6-base qt6-declarative qt6-svg qt6-wayland qt6-imageformats qt6-multimedia \
-  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-emoji woff2-font-awesome \
+  ttf-jetbrains-mono-nerd noto-fonts noto-fonts-cjk noto-fonts-emoji woff2-font-awesome \
   foot alacritty xdg-terminal-exec fastfetch starship btop eza bat fzf zoxide ripgrep fd \
   wl-clipboard grim slurp jq gum socat hyprpicker hyprsunset imv mpv tmux neovim lua51 \
   gnome-themes-extra libnotify inotify-tools imagemagick \
@@ -139,8 +139,6 @@ mkdir -p ~/.config/omarchy/themes
 OMARCHY_THEME_HEADLESS=1 omarchy-theme-set "Tokyo Night" || echo "theme-set reported errors (expected for missing apps)"
 
 
-# Default browser: Brave Origin (build-inside.sh installs it; Omarchy's own default is Chromium).
-xdg-settings set default-web-browser brave-origin.desktop || echo "default browser: set it with xdg-settings"
 
 fc-cache -f >/dev/null
 echo "Omarchy installed in $OMARCHY_PATH"

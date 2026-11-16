@@ -110,29 +110,7 @@ install -m 755 $L/native/bwrap-shim.sh /usr/local/bin/bwrap
 # pkexec (polkit, setuid) -> the same fake root as sudo.
 install -m 755 $L/native/pkexec-shim.sh /usr/local/bin/pkexec
 
-# Browser: Brave Origin (AUR binary release, aarch64), instead of Firefox. makepkg refuses to run as root:
-# - native (fake root): its dependencies installed here (we are root), then makepkg without the fake root (the
-#   real app uid underneath) and without -s (no sudo needed);
-# - PC chroot (real root): a throwaway user.
-rm -rf /tmp/brave && git clone -q https://aur.archlinux.org/brave-origin-bin.git /tmp/brave
-if [ -n "${LOTFIX_NATIVE:-}" ]; then
-  pacman -S --noconfirm --needed $(cd /tmp/brave && source ./PKGBUILD && echo "${depends[@]}")
-  # makepkg packages under Arch's fakeroot, which takes our fakechroot (its path holds "libfakeroot") for a nested
-  # fakeroot and stops. Owners do not matter here: a fakeroot that just runs the command.
-  mkdir -p /tmp/nofakeroot && printf '#!/bin/sh\n[ "$1" = -- ] && shift\nexec "$@"\n' > /tmp/nofakeroot/fakeroot
-  chmod 755 /tmp/nofakeroot/fakeroot
-  (cd /tmp/brave && env -u FAKEROOTKEY PATH=/tmp/nofakeroot:$PATH LD_PRELOAD="$(printf '%s' "$LD_PRELOAD" |
-    tr ':' '\n' | grep -v libfakeroot.so | paste -sd:)" makepkg --noconfirm 2>&1 | tail -3)
-  rm -rf /tmp/nofakeroot
-else
-  useradd -m aurbuild 2>/dev/null || true
-  chown -R aurbuild /tmp/brave
-  (cd /tmp/brave && runuser -u aurbuild -- makepkg --noconfirm -s 2>&1 | tail -3)
-  userdel -r aurbuild 2>/dev/null || true
-fi
-pacman -U --noconfirm /tmp/brave/brave-origin-bin-*.pkg.tar.*
-rm -rf /tmp/brave
-xdg-settings set default-web-browser brave-origin.desktop || true # Omarchy's install ran before it existed
+# No browser in the image: Omarchy's Install > Browser menu has them (Zen, Brave, Chromium...), from its repository.
 # No udev daemon on Android: udevadm control/trigger/settle succeed as no-ops.
 install -m 755 $L/native/udevadm-shim.sh /usr/local/bin/udevadm
 # The session's own system bus (SessionService) and the UPower stand-in it carries (battery from Android).

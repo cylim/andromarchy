@@ -1858,9 +1858,9 @@ public class MainActivity extends Activity
         float gestureY = capturedAxis(event,
             MotionEvent.AXIS_GESTURE_SCROLL_Y_DISTANCE, 0, historyPos);
         if (gestureY != 0f)
-            Native.nativeSendMouseScroll(0, gestureY);
+            Native.nativeSendTouchpadScroll(0, gestureY);
         if (gestureX != 0f)
-            Native.nativeSendMouseScroll(1, -gestureX);
+            Native.nativeSendTouchpadScroll(1, -gestureX);
     }
 
     private boolean hasCapturedTouchpadScrollAxes(MotionEvent event) {
@@ -2097,14 +2097,34 @@ public class MainActivity extends Activity
         return Math.max(min, Math.min(max, value));
     }
 
+    // Axes scrolled during the current two-finger scroll: each gets its end of scroll when the fingers leave.
+    private boolean mTouchpadScrolledV, mTouchpadScrolledH;
+
+    /**
+     * A touchpad's two-finger scroll (Android's own gesture, in display pixels), sent as a finger scroll like a
+     * laptop's touchpad under libinput. As mouse wheel events the compositor counted each pixel as 1/15 of a wheel
+     * click: pages raced, and Omarchy's touchpad scroll speed (input.touchpad.scroll_factor) did not apply.
+     */
     private boolean handleTouchpadScroll(MotionEvent event) {
-        if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_MOVE) {
             float scrollX = event.getAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_X_DISTANCE);
             float scrollY = event.getAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_Y_DISTANCE);
-            if (scrollY != 0)
-                Native.nativeSendMouseScroll(0, scrollY);
-            if (scrollX != 0)
-                Native.nativeSendMouseScroll(1, -scrollX);
+            if (scrollY != 0) {
+                Native.nativeSendTouchpadScroll(0, scrollY);
+                mTouchpadScrolledV = true;
+            }
+            if (scrollX != 0) {
+                Native.nativeSendTouchpadScroll(1, -scrollX);
+                mTouchpadScrolledH = true;
+            }
+        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            // The fingers left: the end of the scroll, from which apps start their kinetic scrolling.
+            if (mTouchpadScrolledV)
+                Native.nativeSendTouchpadScroll(0, 0f);
+            if (mTouchpadScrolledH)
+                Native.nativeSendTouchpadScroll(1, 0f);
+            mTouchpadScrolledV = mTouchpadScrolledH = false;
         }
         return true;
     }

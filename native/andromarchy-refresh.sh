@@ -4,7 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/cylim/andromarchy/main/native/andromarchy-refresh.sh | bash
 # or, from a copy of the repository: bash native/andromarchy-refresh.sh /path/to/andromarchy
 # It installs again what build-inside.sh and install-omarchy-android.sh put in the image and that changed since:
-# the compatibility library, the on-screen keyboard's scripts, Omarchy's package repository and update fixes.
+# the compatibility library, the on-screen keyboard's scripts, Omarchy's package repository and update fixes, the
+# compositor backend (rebuilt when its patches changed), fonts.
 # Idempotent. What lives in the app itself (hardware keyboard detection...) needs the new APK.
 set -euo pipefail
 SRC=${1:-}
@@ -46,6 +47,20 @@ install -m 755 "$SRC"/omarchy/omarchy-android-patches.sh /usr/local/bin/omarchy-
 install -m 755 "$SRC"/omarchy/andromarchy-omarchy-repo.sh /usr/local/bin/andromarchy-omarchy-repo
 omarchy-android-patches
 sudo andromarchy-omarchy-repo
+echo "Chinese, Japanese and Korean fonts"
+sudo pacman -S --noconfirm --needed noto-fonts-cjk
+# Brave is no longer part of the system: the copy the image came with goes, once (a Brave installed later stays).
+if [ ! -e /var/lib/andromarchy/brave-not-preinstalled ]; then
+  if pacman -Qq brave-origin-bin >/dev/null 2>&1; then
+    echo "Removing the preinstalled Brave"
+    sudo pacman -Rns --noconfirm brave-origin-bin
+  fi
+  sudo sh -c 'mkdir -p /var/lib/andromarchy && touch /var/lib/andromarchy/brave-not-preinstalled'
+fi
+
+echo "Compositor backend (touchpad scrolling)"
+bash "$SRC"/native/andromarchy-aquamarine.sh "$SRC"/patches/aquamarine
+
 # Omarchy itself on the release this project follows (the downloaded image may hold a development snapshot).
 OMARCHY_PATH=/usr/share/omarchy /usr/share/omarchy/bin/omarchy-update-dev
 echo "Done. Update everything with: omarchy update"

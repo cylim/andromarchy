@@ -927,7 +927,22 @@ Java_andro_marchy_Native_nativeSendMouseScroll(
         return;
     struct InputEvent ev = {
         .type = INPUT_TYPE_POINTER_AXIS,
-        .pointer_axis = { .axis = axis, .value = value, .discrete = 0 },
+        .pointer_axis = { .axis = axis, .value = value, .discrete = 0, .source = POINTER_AXIS_SOURCE_WHEEL },
+    };
+    push_input_event(g_state.ctx, &ev);
+}
+
+/* A touchpad's two-finger scroll: pixels, as a "finger" scroll (the compositor applies its touchpad scroll factor,
+ * apps scroll by pixels). value 0 ends the scroll on that axis (axis_stop: apps start kinetic scrolling). */
+JNIEXPORT void JNICALL
+Java_andro_marchy_Native_nativeSendTouchpadScroll(
+    JNIEnv *env, jclass clazz, jint axis, jfloat value)
+{
+    if (!g_state.ctx)
+        return;
+    struct InputEvent ev = {
+        .type = INPUT_TYPE_POINTER_AXIS,
+        .pointer_axis = { .axis = axis, .value = value, .discrete = 0, .source = POINTER_AXIS_SOURCE_FINGER },
     };
     push_input_event(g_state.ctx, &ev);
 }

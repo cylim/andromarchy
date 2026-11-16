@@ -31,6 +31,7 @@ public final class Native {
     public static native void nativeSendMouseMotion(float x, float y, float dx, float dy);
     public static native void nativeSendMouseButton(int button, boolean pressed);
     public static native void nativeSendMouseScroll(int axis, float value);
+    public static native void nativeSendTouchpadScroll(int axis, float value);
     public static native void nativeSetRefreshRate(float hz);
     public static native void nativeSendClipboard(byte[] data);
     public static native void nativeSendTextInput(byte[] data);
