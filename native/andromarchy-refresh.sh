@@ -37,6 +37,7 @@ squeekboard-toggle apply || true
 echo "Services without the caller's open files (systemctl, systemd-run stand-ins)"
 bash "$SRC"/native/install-systemctl.sh >/dev/null
 install -m 755 "$SRC"/omarchy/systemd-run-shim.sh /usr/local/bin/systemd-run
+install -m 755 "$SRC"/omarchy/uwsm-app-shim.sh /usr/local/bin/uwsm-app
 
 echo "Omarchy: package repository, update fixes"
 install -Dm 755 "$SRC"/omarchy/omarchy-update-dev-android.sh /usr/local/share/andromarchy/omarchy-update-dev

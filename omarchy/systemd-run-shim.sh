@@ -21,7 +21,7 @@ done
 (
   for fd in /proc/self/fd/*; do
     fd=${fd##*/}
-    case $fd in 0 | 1 | 2) ;; *) eval "exec $fd>&-" 2>/dev/null ;; esac
+    case $fd in 0 | 1 | 2 | *[!0-9]*) ;; *) eval "exec $fd>&-" 2>/dev/null ;; esac
   done
   exec setsid "$@"
 ) >/dev/null 2>&1 </dev/null &

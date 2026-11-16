@@ -52,20 +52,7 @@ done
 exec "$@"
 EOF
 # No systemd user session: the app launcher runs "uwsm-app -- gtk-launch x.desktop" (uwsm puts apps in a scope).
-cat > /usr/local/bin/uwsm-app <<'EOF'
-#!/bin/sh
-# Android: no systemd, so no scope. Drop uwsm-app options and run the command as-is.
-while [ $# -gt 0 ]; do
-  case $1 in
-    -s|-a|-u|-d|-t|-S) shift 2 ;;
-    --) shift; break ;;
-    -*) shift ;;
-    *) break ;;
-  esac
-done
-exec "$@"
-EOF
-chmod 755 /usr/local/bin/uwsm-app
+install -m 755 "$(dirname "$0")/uwsm-app-shim.sh" /usr/local/bin/uwsm-app
 # No systemd: xdg-terminal-exec and omarchy-launch-browser start apps with "systemd-run --user [--scope]".
 install -m 755 "$(dirname "$0")/systemd-run-shim.sh" /usr/local/bin/systemd-run
 chmod +x /usr/local/bin/systemd-cat
