@@ -31,7 +31,7 @@ fi
 
 old=$(git -C "$O" rev-parse HEAD)
 git -C "$O" fetch --quiet --depth 1 origin "$ref" # (a tag or a branch: FETCH_HEAD either way)
-new=$(git -C "$O" rev-parse FETCH_HEAD)
+new=$(git -C "$O" rev-parse "FETCH_HEAD^{commit}") # (an annotated tag: its commit)
 if [[ $new == "$old" ]]; then
   echo "Omarchy is up to date"
 else
