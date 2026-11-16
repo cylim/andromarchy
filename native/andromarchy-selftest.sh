@@ -42,7 +42,7 @@ section "GPU"
 t "Hyprland renders with our Mesa"  sh -c 'grep -q libgallium /proc/$(pgrep -x Hyprland | head -1)/maps'
 t "OpenGL on Adreno (Wayland)"      sh -c 'eglinfo -B -p wayland | grep -q "renderer: Adreno"'
 t "Vulkan on Adreno (Turnip)"       sh -c 'vulkaninfo --summary | grep -q "deviceName.*Adreno"'
-t "X11 apps on the GPU (glamor)"    sh -c 'grep -q "KGSL surfaceless EGL backend" /data/user/0/andro.marchy/files/run/hyprland.log'
+t "X11 apps on the GPU (glamor)"    sh -c 'grep -q "KGSL surfaceless EGL backend" "$XDG_RUNTIME_DIR"/hyprland.log'
 t "X11 OpenGL direct on Adreno"     sh -c 'glxinfo -B | grep -q "direct rendering: Yes" && glxinfo -B | grep -q "renderer string: Adreno"'
 t "hardware video (VA-API termuxva)" sh -c 'vainfo 2>&1 | grep -q "VAProfile"'
 

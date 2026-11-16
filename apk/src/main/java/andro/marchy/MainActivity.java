@@ -66,6 +66,11 @@ public class MainActivity extends Activity
     private int viewHeight = 0;
     private static final String KEY_BOUND_KEYCODE = "bound_keycode";
     private static final String KEY_SOCKET_PATH = "socket_path";
+
+    /** The session's own daemon socket, under this app's files dir whatever the application id. */
+    private String defaultSocketPath() {
+        return SessionService.daemonSocket(this).getPath();
+    }
     private static final String KEY_USE_ROOT = "use_root";
     // Latency presets in ms; 0 = engine default. Shared with SettingsActivity.
     static final String KEY_SPEAKER_LATENCY_MS = "speaker_latency_ms";
@@ -84,7 +89,6 @@ public class MainActivity extends Activity
     // the AAudio playback stream while this window is in the foreground.
     private AudioManager mAudioManager;
     private AudioFocusRequest mAudioFocusRequest;
-    private static final String DEFAULT_SOCKET_PATH = "/data/data/andro.marchy/files/run/andromarchy/display_daemon.sock";
     private static final String KEY_ACCESSIBILITY_ENABLED = "accessibility_key_intercept";
     private static final String KEY_EXTRA_KEYS_ENABLED = "extra_keys_bar";
     private static final String KEY_AUTO_SHOW_EXTRA_KEYS = "auto_show_extra_keys";
@@ -232,9 +236,9 @@ public class MainActivity extends Activity
     // Termux-side Binder bridge instead of calling connect() from this UID.
     private void applyConnectionConfig() {
         SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
-        String sock = prefs.getString(KEY_SOCKET_PATH, DEFAULT_SOCKET_PATH);
+        String sock = prefs.getString(KEY_SOCKET_PATH, defaultSocketPath());
         if (sock == null || sock.trim().isEmpty())
-            sock = DEFAULT_SOCKET_PATH;
+            sock = defaultSocketPath();
         boolean useRoot = prefs.getBoolean(KEY_USE_ROOT, false);
         String helperPath = getApplicationInfo().nativeLibraryDir + "/libfdhelper.so";
         String bridgePath = getCacheDir().getAbsolutePath() + "/andromarchy_fdbridge.sock";

@@ -42,6 +42,11 @@ public class SettingsActivity extends Activity {
     private static final String PREFS_NAME = "andromarchy_settings";
     private static final String KEY_BOUND_KEYCODE = "bound_keycode";
     private static final String KEY_SOCKET_PATH = "socket_path";
+
+    /** The session's own daemon socket, under this app's files dir whatever the application id. */
+    private String defaultSocketPath() {
+        return SessionService.daemonSocket(this).getPath();
+    }
     private static final String KEY_USE_ROOT = "use_root";
     private static final String KEY_AUDIO_KEEPALIVE = "audio_keepalive";
     private static final String KEY_SPEAKER_LATENCY_MS = "speaker_latency_ms";
@@ -54,7 +59,6 @@ public class SettingsActivity extends Activity {
     private static final String KEY_NOTIFICATION_ENABLED = "settings_notification";
     private static final String KEY_SCREEN_ORIENTATION = "screen_orientation";
     private static final String KEY_PIP_MODE = "pip_mode";
-    private static final String DEFAULT_SOCKET_PATH = "/data/data/andro.marchy/files/run/andromarchy/display_daemon.sock";
     private static final int UNBOUND = -1;
 
     // Stored values match Termux:X11's forceOrientation preference.
@@ -871,8 +875,8 @@ public class SettingsActivity extends Activity {
 
         EditText socketInput = new EditText(this);
         socketInput.setSingleLine(true);
-        socketInput.setText(prefs.getString(KEY_SOCKET_PATH, DEFAULT_SOCKET_PATH));
-        socketInput.setHint(DEFAULT_SOCKET_PATH);
+        socketInput.setText(prefs.getString(KEY_SOCKET_PATH, defaultSocketPath()));
+        socketInput.setHint(defaultSocketPath());
         socketInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}

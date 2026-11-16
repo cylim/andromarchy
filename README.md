@@ -41,8 +41,9 @@ change (HyperOS/MIUI take some gestures for themselves), installing apps, and th
 - **GPU:** Mesa with KGSL support (no `/dev/dri` needed); XWayland is GPU-accelerated too.
 - **Flatpak** without user namespaces: sandboxes are built as trees of links (`native/bwrap-flatpak.py`), with a
   document portal and `flatpak-spawn` stand-ins.
-- **Updates are safe:** `pacman -Syu` works. Pacman hooks keep our builds (Mesa, Hyprland, aquamarine, fakechroot) in
-  place across updates.
+- **Updates are safe:** `omarchy update` and `pacman -Syu` work, on Omarchy's stable channel for ARM (its packages,
+  T3 Code and Claude Code among them, and its mirror of Arch Linux ARM). Pacman hooks keep our builds (Mesa, Hyprland,
+  aquamarine, fakechroot) in place across updates.
 
 ## Known limits
 
