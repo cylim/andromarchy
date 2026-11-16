@@ -14,7 +14,7 @@ BarWidget {
         anchors.fill: parent
         bar: root.bar
         text: "⌨"
-        tooltipText: "On-Screen Keyboard"
+        tooltipText: "On-screen keyboard on / off"
         onPressed: function(buttonCode) {
             if (root.bar)
                 root.bar.run("squeekboard-toggle")

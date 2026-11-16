@@ -51,7 +51,13 @@ final class HardwareKeyboard implements InputManager.InputDeviceListener {
      */
     private boolean mouseButtons(InputDevice kbd) {
         // the mouse itself also reports an alphabetic keyboard (its buttons): a mouse, whatever else it says
-        if (kbd.getName().toLowerCase().contains("mouse") || kbd.supportsSource(InputDevice.SOURCE_MOUSE))
+        String name = kbd.getName().toLowerCase();
+        if (name.contains("mouse"))
+            return true;
+        // ...except a keyboard cover, whose keys and touchpad are one Android device ("HONOR Smart Touch Keyboard":
+        // KEYBOARD | MOUSE | TOUCHPAD): taken for a mouse, the on-screen keyboard kept popping up while typing on it.
+        if (kbd.supportsSource(InputDevice.SOURCE_MOUSE) && !kbd.supportsSource(InputDevice.SOURCE_TOUCHPAD)
+                && !name.contains("keyboard"))
             return true;
         for (int id : im.getInputDeviceIds()) {
             InputDevice o = im.getInputDevice(id);
