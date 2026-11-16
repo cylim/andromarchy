@@ -7,6 +7,8 @@
 // Build (rootfs): gcc -O2 -shared -fPIC -o android-compat.so android-compat.c go-syscalls.c android-ifaddrs.c -ldl
 #define _GNU_SOURCE
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <sys/syscall.h>
 #include <sys/prctl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -120,10 +122,32 @@ static void chromium_no_sandbox(int argc, char **argv)
     free(av);
 }
 
+// 7d. Firefox's sandbox (Zen, LibreWolf...). The launcher turns it off for the whole session (MOZ_DISABLE_*_SANDBOX),
+//     because it could not work before this library handed its traps over (go-syscalls.c). A rootfs whose library
+//     does carries /opt/lotfix/firefox-sandbox: take the switches out of every program's environment, so the sandbox
+//     is on from the next program started, whatever the app's version and without a new session. (The session's
+//     environment is fixed when it starts: with the mark made later, by andromarchy-refresh, Zen kept saying
+//     "The security sandbox is disabled" until the app was restarted.)
+static void firefox_sandbox_env(void)
+{
+    if (!rootfs_base || !getenv("MOZ_DISABLE_CONTENT_SANDBOX"))
+        return;
+    char mark[4096];
+    snprintf(mark, sizeof mark, "%s/opt/lotfix/firefox-sandbox", rootfs_base);
+    if (syscall(SYS_faccessat, AT_FDCWD, mark, F_OK) != 0) // host path, raw: fakechroot would prefix it again
+        return;
+    unsetenv("MOZ_DISABLE_CONTENT_SANDBOX");
+    unsetenv("MOZ_DISABLE_RDD_SANDBOX");
+    unsetenv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX");
+    unsetenv("MOZ_DISABLE_GMP_SANDBOX");
+    unsetenv("MOZ_DISABLE_UTILITY_SANDBOX");
+}
+
 __attribute__((constructor)) static void android_compat_init(int argc, char **argv, char **envp)
 {
     (void)envp;
     rootfs_base = getenv("FAKECHROOT_BASE");
+    firefox_sandbox_env();
     chromium_no_sandbox(argc, argv);
     go_syscalls_init(program_invocation_name, main_program()); // path base for every process, Go trap for Go
     if (program_invocation_name && program_invocation_name[0] == '/') {

@@ -60,6 +60,14 @@ printf '#!/bin/bash\n# Android/Andromarchy: the app keeps the tablet awake (see 
 sed -i 's/^\( *\)kernel_updated=true$/\1kernel_updated=false # Andromarchy: Android'"'"'s kernel, never updated here/' \
   "$O/bin/omarchy-update-restart"
 
+# Install > AI > T3 Code: Omarchy's installer needs FUSE for T3 Code's AppImage, which Android does not give apps; ours
+# installs the package (omarchy/omarchy-install-ai-t3-code-android.sh). Omarchy's own kept as .orig.
+if [ -f /usr/local/share/andromarchy/omarchy-install-ai-t3-code ] && [ -f "$O/bin/omarchy-install-ai-t3-code" ] &&
+  ! cmp -s /usr/local/share/andromarchy/omarchy-install-ai-t3-code "$O/bin/omarchy-install-ai-t3-code"; then
+  cp -a "$O/bin/omarchy-install-ai-t3-code" "$O/bin/omarchy-install-ai-t3-code.orig"
+  install -m 755 /usr/local/share/andromarchy/omarchy-install-ai-t3-code "$O/bin/omarchy-install-ai-t3-code"
+fi
+
 # DNS provider (network panel): no NetworkManager/systemd-resolved here; the rootfs's /etc/resolv.conf is written
 # directly (/usr/local/share/andromarchy/omarchy-dns). Omarchy's own kept as omarchy-dns.orig.
 if ! cmp -s /usr/local/share/andromarchy/omarchy-dns "$O/bin/omarchy-dns"; then

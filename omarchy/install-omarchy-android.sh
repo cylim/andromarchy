@@ -23,6 +23,7 @@ cp -a "$SRC" "$OMARCHY_PATH"
 # Our changes to Omarchy's own files, also re-applied after every omarchy-update (post-update hook).
 install -Dm 755 "$(dirname "$0")/../native/omarchy-dns-android.sh" /usr/local/share/andromarchy/omarchy-dns
 install -m 755 "$(dirname "$0")/omarchy-update-dev-android.sh" /usr/local/share/andromarchy/omarchy-update-dev
+install -m 755 "$(dirname "$0")/omarchy-install-ai-t3-code-android.sh" /usr/local/share/andromarchy/omarchy-install-ai-t3-code
 install -m 755 "$(dirname "$0")/omarchy-android-patches.sh" /usr/local/bin/omarchy-android-patches
 omarchy-android-patches
 # Omarchy's package repository and its key ("omarchy update", the Install menus).
@@ -65,26 +66,8 @@ done
 exec "$@"
 EOF
 chmod 755 /usr/local/bin/uwsm-app
-# No systemd: xdg-terminal-exec and omarchy-launch-browser start apps with "systemd-run --user [--scope]", which
-# fails without a running systemd ("Failed to connect to user scope bus"): the config editor and other TUI apps
-# opened and died. Run the command directly: in the foreground with --scope, detached otherwise (like a unit).
-cat > /usr/local/bin/systemd-run <<'EOF'
-#!/bin/sh
-scope=0
-while [ $# -gt 0 ]; do
-  case $1 in
-    --scope) scope=1; shift ;;
-    --*=*) shift ;;
-    -u|-p|-E|-M|--unit|--slice|--property|--description|--setenv|--working-directory|--machine|--uid|--gid|--nice) shift 2 ;;
-    --) shift; break ;;
-    -*) shift ;;
-    *) break ;;
-  esac
-done
-[ $scope = 1 ] && exec "$@"
-setsid "$@" >/dev/null 2>&1 < /dev/null &
-EOF
-chmod 755 /usr/local/bin/systemd-run
+# No systemd: xdg-terminal-exec and omarchy-launch-browser start apps with "systemd-run --user [--scope]".
+install -m 755 "$(dirname "$0")/systemd-run-shim.sh" /usr/local/bin/systemd-run
 chmod +x /usr/local/bin/systemd-cat
 
 pacman -S --noconfirm --needed brightnessctl

@@ -34,8 +34,13 @@ install -m755 "$SQ"/squeekboard "$SQ"/squeekboard-toggle "$SQ"/squeekboard-theme
 cp "$SQ"/plugin/* ~/.config/omarchy/plugins/andromarchy.squeekboard/
 squeekboard-toggle apply || true
 
+echo "Services without the caller's open files (systemctl, systemd-run stand-ins)"
+bash "$SRC"/native/install-systemctl.sh >/dev/null
+install -m 755 "$SRC"/omarchy/systemd-run-shim.sh /usr/local/bin/systemd-run
+
 echo "Omarchy: package repository, update fixes"
 install -Dm 755 "$SRC"/omarchy/omarchy-update-dev-android.sh /usr/local/share/andromarchy/omarchy-update-dev
+install -m 755 "$SRC"/omarchy/omarchy-install-ai-t3-code-android.sh /usr/local/share/andromarchy/omarchy-install-ai-t3-code
 install -m 755 "$SRC"/omarchy/omarchy-android-patches.sh /usr/local/bin/omarchy-android-patches
 install -m 755 "$SRC"/omarchy/andromarchy-omarchy-repo.sh /usr/local/bin/andromarchy-omarchy-repo
 omarchy-android-patches

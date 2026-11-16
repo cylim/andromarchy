@@ -27,6 +27,42 @@ sed -i 's/^                        elif not os.listdir(filepath):$/             
 grep -q 'delay = conf.get(section, "RestartSec", default or strE(DefaultRestartSec))' "$T/systemctl"
 sed -i 's/delay = conf.get(section, "RestartSec", default or strE(DefaultRestartSec))/delay = conf.get(section, "RestartSec", default or "100ms")/' "$T/systemctl"
 
+# Services start with only stdin/stdout/stderr, as under systemd: every other descriptor the caller had open (fd 3 and
+# up) is dropped when the service's program starts. They were inherited: Superwhisper, started by an Omarchy
+# migration during "omarchy update", kept the update's lock file open, and every later update stopped with
+# "An Omarchy update is already running". Marked close-on-exec rather than closed: the stand-in's own files (journal
+# log...) and the preloaded runtime's keep working until the exec.
+python3 - "$T/systemctl" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+anchor = """        self.dup2_journal_log(conf)
+        cmd_args: List[Union[str, bytes]] = []
+"""
+assert s.count(anchor) == 1, "execve_from changed upstream"
+s = s.replace(anchor, """        self.dup2_journal_log(conf)
+        drop_inherited_fds()
+        cmd_args: List[Union[str, bytes]] = []
+""")
+helper = """def drop_inherited_fds() -> None:
+    \"\"\" Andromarchy: like systemd, a service gets no descriptor of its caller beyond 0-2 (close-on-exec) \"\"\"
+    try:
+        fds = [int(fd) for fd in os.listdir("/proc/self/fd")]
+    except (OSError, ValueError):
+        fds = list(range(3, 1024))
+    for fd in fds:
+        if fd > 2:
+            try:
+                os.set_inheritable(fd, False)
+            except OSError:
+                pass
+
+def exec_path(cmd: str)"""
+assert s.count("def exec_path(cmd: str)") == 1
+s = s.replace("def exec_path(cmd: str)", helper, 1)
+open(p, "w").write(s)
+PY
+
 mkdir -p "$D" "$X"
 # systemctl itself is a wrapper (native/systemctl-wrapper.sh): power verbs go to the app.
 install -m 755 "$T/systemctl" "$X/systemctl"
