@@ -171,6 +171,7 @@ rm -rf /tmp/wtype && git clone -q https://github.com/atx/wtype /tmp/wtype && git
     gcc -O2 -I. -o /usr/local/bin/wtype main.c vk.c $(pkg-config --cflags --libs wayland-client xkbcommon)) && rm -rf /tmp/wtype
 gcc -O2 -shared -fPIC -o /opt/lotfix/android-compat.so $L/native/android-compat.c $L/native/go-syscalls.c \
   $L/native/android-ifaddrs.c -ldl
+touch /opt/lotfix/firefox-sandbox # this library lets Firefox's sandbox run: the launcher leaves it on (lotfix-run.c)
 # glibc reads locales internally from LOCPATH, which ignores locale-archive: one directory per locale.
 localedef --no-archive -i en_US -f UTF-8 /usr/lib/locale/en_US.UTF-8
 

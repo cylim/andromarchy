@@ -25,6 +25,7 @@ LD_PRELOAD="$FAKECHROOT_BASE/opt/lotfix/.android-compat.so.new:${LD_PRELOAD#*:}"
   { echo "the new library does not load; the current one stays" >&2; rm -f /opt/lotfix/.android-compat.so.new; exit 1; }
 cp -p /opt/lotfix/android-compat.so /opt/lotfix/android-compat.so.prev
 mv /opt/lotfix/.android-compat.so.new /opt/lotfix/android-compat.so
+touch /opt/lotfix/firefox-sandbox # Firefox's sandbox can run with this library; an app that knows the mark leaves it on
 
 echo "On-screen keyboard"
 SQ=$SRC/omarchy/squeekboard

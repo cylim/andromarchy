@@ -1362,6 +1362,61 @@ static int has_var(char *const envp[], const char *name)
     return 0;
 }
 
+// LD_PRELOAD entries given by name only ("libmozsandbox.so", which Firefox adds for its child processes) are searched
+// by the loader in LD_LIBRARY_PATH, which holds guest paths (/opt/zen-browser-bin) while the loader runs on Android's
+// filesystem: "cannot be preloaded", and Firefox's sandbox, which needs that library, could not start. Give such
+// entries their full host path. Returns a new "LD_PRELOAD=..." string, or NULL when there is nothing to change.
+static char *preload_with_paths(char *const envp[])
+{
+    const char *preload = NULL, *libpath = NULL, *base = rootfs_base;
+    for (int i = 0; envp && envp[i]; i++) {
+        if (strncmp(envp[i], "LD_PRELOAD=", 11) == 0)
+            preload = envp[i] + 11;
+        else if (strncmp(envp[i], "LD_LIBRARY_PATH=", 16) == 0)
+            libpath = envp[i] + 16;
+    }
+    if (!preload || !libpath || !base)
+        return NULL;
+    size_t cap = strlen(preload) + 12, used, changed = 0;
+    for (const char *p = preload; *p; p++)
+        if (*p == ':' || *p == ' ')
+            cap += 4096;
+    cap += 4096;
+    char *out = malloc(cap);
+    if (!out)
+        return NULL;
+    used = (size_t)sprintf(out, "LD_PRELOAD=");
+    for (const char *p = preload; *p;) {
+        size_t n = strcspn(p, ": ");
+        int found = 0;
+        if (n && !memchr(p, '/', n)) {
+            for (const char *d = libpath; *d && !found;) {
+                size_t dn = strcspn(d, ":");
+                char guest[4096];
+                if (dn && d[0] == '/' && dn + n + 2 < sizeof guest) {
+                    snprintf(guest, sizeof guest, "%.*s/%.*s", (int)dn, d, (int)n, p);
+                    if (access(guest, R_OK) == 0) { // fakechroot resolves the guest path
+                        int at_base = strncmp(guest, base, strlen(base)) == 0;
+                        used += (size_t)snprintf(out + used, cap - used, "%s%s", at_base ? "" : base, guest);
+                        found = changed = 1;
+                    }
+                }
+                d += dn + (d[dn] == ':');
+            }
+        }
+        if (!found)
+            used += (size_t)snprintf(out + used, cap - used, "%.*s", (int)n, p);
+        p += n;
+        if (*p)
+            out[used++] = *p++, out[used] = 0;
+    }
+    if (!changed) {
+        free(out);
+        return NULL;
+    }
+    return out;
+}
+
 int execve(const char *path, char *const argv[], char *const envp[])
 {
     static int (*next)(const char *, char *const[], char *const[]);
@@ -1371,8 +1426,9 @@ int execve(const char *path, char *const argv[], char *const envp[])
     while (envp && envp[n])
         n++;
     char *env[n + N_RUNTIME + 1];
+    char *preload = preload_with_paths(envp); // (not freed: we exec, or the caller's exec failed)
     for (size_t i = 0; i < n; i++)
-        env[i] = envp[i];
+        env[i] = preload && strncmp(envp[i], "LD_PRELOAD=", 11) == 0 ? preload : envp[i];
     for (size_t i = 0; i < N_RUNTIME; i++) {
         if (runtime_env[i] && !has_var(envp, runtime_vars[i]))
             env[n++] = runtime_env[i];

@@ -194,6 +194,46 @@ static void on_sigsys(int sig, siginfo_t *si, void *ctx)
         return;
     }
 
+    // A trap of the program's own seccomp sandbox (Firefox, Chromium: every trap of theirs carries a number, in
+    // si_errno; Android's filter and our Go filter trap with 0): theirs to answer, through the handler they
+    // registered. Answering it here made the syscall again, under their filter: a trap inside the trap until the stack
+    // ran out (Firefox's content processes died of SIGSEGV as soon as their sandbox started).
+    // Their handler asks a broker process to open the file, by its path: give it the guest path. fakechroot's wrappers
+    // have already rewritten it to the host path, which is not in the broker's list of allowed paths (written with
+    // guest paths), and which the broker's own fakechroot would rewrite a second time.
+    if (si->si_errno != 0 && go_sigsys_user.sa_sigaction && (void *)go_sigsys_user.sa_handler != SIG_DFL &&
+        (void *)go_sigsys_user.sa_handler != SIG_IGN) {
+        int at[2] = {-1, -1};
+        uint64_t saved[2] = {0, 0};
+        switch (si->si_syscall) {
+        case SYS_openat: case SYS_newfstatat: case SYS_faccessat: case SYS_faccessat2: case SYS_mkdirat:
+        case SYS_mknodat: case SYS_unlinkat: case SYS_fchmodat: case SYS_fchownat: case SYS_statx:
+        case SYS_utimensat: case SYS_readlinkat: case SYS_inotify_add_watch:
+            at[0] = 1;
+            break;
+        case SYS_linkat: case SYS_renameat: case SYS_renameat2:
+            at[0] = 1, at[1] = 3;
+            break;
+        case SYS_symlinkat:
+            at[0] = 2;
+            break;
+        case SYS_truncate: case SYS_statfs: case SYS_chdir: case SYS_execve:
+            at[0] = 0;
+            break;
+        }
+        for (int k = 0; k < 2; k++) {
+            const char *p = at[k] < 0 ? NULL : (const char *)r[at[k]];
+            saved[k] = at[k] < 0 ? 0 : r[at[k]];
+            if (p && base_len && starts_with_dir(p, base, base_len))
+                r[at[k]] = (uint64_t)(p[base_len] ? p + base_len : "/");
+        }
+        go_sigsys_user.sa_sigaction(sig, si, ctx);
+        for (int k = 0; k < 2; k++)
+            if (at[k] > 0) // x0 now holds the result
+                r[at[k]] = saved[k];
+        return;
+    }
+
     switch (si->si_syscall) {
     case SYS_openat:
     case SYS_newfstatat:

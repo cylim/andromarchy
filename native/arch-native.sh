@@ -55,11 +55,11 @@ else
   export MESA_LOADER_DRIVER_OVERRIDE=kgsl GALLIUM_DRIVER=freedreno
 fi
 
-# Firefox's sandbox cannot work over fakechroot: its seccomp broker checks the real (rewritten) paths against
-# /usr/share/fonts etc., denies them, and every tab crashes with "no fonts". (Under proot the kernel saw guest paths.)
-# Trade-off: web content runs without Firefox's process sandbox.
-export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 \
-  MOZ_DISABLE_GMP_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
+# Firefox's sandbox works on a rootfs whose android-compat hands its traps over with guest paths (marker file, see
+# lotfix-run.c); on an older one its broker denied the rewritten paths and every tab crashed: off there.
+[ -e "$R/opt/lotfix/firefox-sandbox" ] ||
+  export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1 \
+    MOZ_DISABLE_GMP_SANDBOX=1 MOZ_DISABLE_UTILITY_SANDBOX=1
 # Other sandbox families (user namespaces / setuid helpers): Electron, WebKitGTK. Chromium: android-compat.
 export ELECTRON_DISABLE_SANDBOX=1 WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 
