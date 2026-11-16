@@ -2128,6 +2128,7 @@ public class MainActivity extends Activity
     private boolean handleTouchpadScroll(MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_MOVE) {
+            surfaceView.removeCallbacks(mTouchpadScrollEnd); // scrolling again before the end was sent: one scroll
             // Android delivers the touchpad's samples in batches, one event per display frame: the distances are in
             // the event's history (the event's own values are those of a resampled point, 0 for most events). Read
             // alone, they gave nothing during the swipe and one lump at its end, which apps took for a fling: a
@@ -2147,15 +2148,25 @@ public class MainActivity extends Activity
                 mTouchpadScrolledH = true;
             }
         } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            // The fingers left: the end of the scroll, from which apps start their kinetic scrolling.
-            if (mTouchpadScrolledV)
-                Native.nativeSendTouchpadScroll(0, 0f);
-            if (mTouchpadScrolledH)
-                Native.nativeSendTouchpadScroll(1, 0f);
-            mTouchpadScrolledV = mTouchpadScrolledH = false;
+            // The fingers left: the end of the scroll, a moment later. Sent at once, apps took the speed of the last
+            // frames for a fling and kept scrolling long after one short swipe (their own kinetic scrolling, much
+            // longer than Android's). After a pause they see a scroll that had stopped: the page stays where the
+            // fingers left it.
+            surfaceView.removeCallbacks(mTouchpadScrollEnd);
+            surfaceView.postDelayed(mTouchpadScrollEnd, TOUCHPAD_SCROLL_END_DELAY_MS);
         }
         return true;
     }
+
+    // Longer than the window apps measure the final speed over (GTK: 150 ms; Firefox and Chromium: under 100 ms).
+    private static final long TOUCHPAD_SCROLL_END_DELAY_MS = 200;
+    private final Runnable mTouchpadScrollEnd = () -> {
+        if (mTouchpadScrolledV)
+            Native.nativeSendTouchpadScroll(0, 0f);
+        if (mTouchpadScrolledH)
+            Native.nativeSendTouchpadScroll(1, 0f);
+        mTouchpadScrolledV = mTouchpadScrolledH = false;
+    };
 
     // 原有 handleTouchEvent 一字未改
     private boolean redirected; // first launch: handed over to InstallActivity in onCreate
