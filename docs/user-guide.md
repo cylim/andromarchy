@@ -133,12 +133,13 @@ Run **Update → Omarchy** in Omarchy's menu, or in a terminal:
 omarchy update
 ```
 
-It updates Omarchy to its newest release, then the packages, then runs Omarchy's migrations.
+It updates Omarchy to the newest 4.5 release, then the packages, then runs Omarchy's migrations.
 
 - Packages come from Omarchy's stable channel: its package repository and its mirror of Arch Linux ARM. They change
   when Omarchy publishes a release, and they match the Hyprland that Andromarchy is built for.
-- To follow another Omarchy branch or tag, write its name in `/etc/andromarchy/omarchy-ref`. The development branch
-  (`quattro`) expects packages that the stable channel does not have.
+- Omarchy stays on 4.5 (`v4.5.x`). To follow a later series, a branch or a tag, write its name in
+  `/etc/andromarchy/omarchy-ref` (`v4.6`, `quattro`, `v4.5.0`). The development branch (`quattro`) expects packages
+  that the stable channel does not have.
 - The Omarchy version in use before the last update is in `~/.local/state/andromarchy/omarchy-previous`.
 
 ### Updating Andromarchy's own parts

@@ -70,9 +70,9 @@ pacman -Rns --noconfirm rust
 
 # Omarchy.
 rm -rf /tmp/omarchy
-# The newest release (vX.Y.Z tag), which goes with the stable package channel; "omarchy update" follows releases
-# too (omarchy/omarchy-update-dev-android.sh).
-OMARCHY_REF=${OMARCHY_REF:-$(git ls-remote --tags --refs https://github.com/basecamp/omarchy 'v*' |
+# Omarchy 4.5 (its newest v4.5.x tag), which goes with the stable package channel and our Hyprland; "omarchy update"
+# follows the same series (omarchy/omarchy-update-dev-android.sh).
+OMARCHY_REF=${OMARCHY_REF:-$(git ls-remote --tags --refs https://github.com/basecamp/omarchy 'v4.5.*' |
   sed -n 's|.*refs/tags/\(v[0-9][0-9.]*\)$|\1|p' | sort -V | tail -1)}
 rm -rf /tmp/omarchy && git clone -q --depth 1 -b "$OMARCHY_REF" https://github.com/basecamp/omarchy /tmp/omarchy
 git -C /tmp/omarchy log -1 --format='omarchy %H %cd' > /etc/lotfix-omarchy-version

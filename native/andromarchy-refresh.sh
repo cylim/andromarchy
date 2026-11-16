@@ -40,4 +40,6 @@ install -m 755 "$SRC"/omarchy/omarchy-android-patches.sh /usr/local/bin/omarchy-
 install -m 755 "$SRC"/omarchy/andromarchy-omarchy-repo.sh /usr/local/bin/andromarchy-omarchy-repo
 omarchy-android-patches
 sudo andromarchy-omarchy-repo
+# Omarchy itself on the release this project follows (the downloaded image may hold a development snapshot).
+OMARCHY_PATH=/usr/share/omarchy /usr/share/omarchy/bin/omarchy-update-dev
 echo "Done. Update everything with: omarchy update"
