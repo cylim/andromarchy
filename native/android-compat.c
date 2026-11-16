@@ -4,7 +4,7 @@
 //     Quickshell's relaunch...) look in the glibc dir. Answer with the real program, from argv[0].
 //  2. every /proc/*/{fd/N,cwd,exe} link: the kernel answers HOST paths (/data/data/.../rootfs/usr/...). A real
 //     chroot shows /usr/...; with the prefix, fakechroot prepends it again when the path is reused.
-// Build (rootfs): gcc -O2 -shared -fPIC -o android-compat.so android-compat.c go-syscalls.c -ldl
+// Build (rootfs): gcc -O2 -shared -fPIC -o android-compat.so android-compat.c go-syscalls.c android-ifaddrs.c -ldl
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <sys/prctl.h>
@@ -1981,6 +1981,31 @@ int socket(int domain, int type, int protocol)
     if (!next)
         next = dlsym(RTLD_NEXT, "socket");
     return next(domain, type, protocol);
+}
+
+// Empty writes with a pointer outside the address space: the kernel checks the buffer's address even for 0 bytes.
+// V8 (Node, Electron) gives an empty buffer a fixed address at the end of its 1 TB pointer cage, which lies beyond
+// the 39-bit address space of Android kernels: write() failed with EFAULT where a desktop kernel (48 bits) returns
+// 0. T3 Code's server wrote an empty file at startup and exited. Same call, with an address that exists.
+ssize_t write(int fd, const void *buf, size_t n)
+{
+    static ssize_t (*next)(int, const void *, size_t);
+    if (!next)
+        next = dlsym(RTLD_NEXT, "write");
+    return next(fd, n ? buf : "", n);
+}
+
+ssize_t pwrite(int fd, const void *buf, size_t n, off_t off)
+{
+    static ssize_t (*next)(int, const void *, size_t, off_t);
+    if (!next)
+        next = dlsym(RTLD_NEXT, "pwrite");
+    return next(fd, n ? buf : "", n, off);
+}
+
+ssize_t pwrite64(int fd, const void *buf, size_t n, off_t off)
+{
+    return pwrite(fd, buf, n, off);
 }
 
 // DRM_IOCTL_VERSION on Qualcomm's KGSL GPU device: Android gives apps no DRM render node, but Mesa allocates GBM
