@@ -299,6 +299,7 @@ public class MainActivity extends Activity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Prefs.init(this); // settings defaults + move from the former file name
+        InputTrace.init(this);
 
         // Andromarchy: this app is also the Linux side. Start the session (daemon, audio, Hyprland) if the Arch
         // rootfs is installed; this activity then connects to the daemon like the Termux version did.
@@ -1281,6 +1282,25 @@ public class MainActivity extends Activity
         }
     }
 
+    // Input trace (InputTrace: off unless run/input-trace exists): everything the window is sent, before any handling.
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        InputTrace.motion("touch", event);
+        return super.dispatchTouchEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        InputTrace.motion("generic", event);
+        return super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        InputTrace.key("key", event);
+        return super.dispatchKeyEvent(event);
+    }
+
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
         if (isMouseEvent(event)) {
@@ -2108,8 +2128,16 @@ public class MainActivity extends Activity
     private boolean handleTouchpadScroll(MotionEvent event) {
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_MOVE) {
+            // Android delivers the touchpad's samples in batches, one event per display frame: the distances are in
+            // the event's history (the event's own values are those of a resampled point, 0 for most events). Read
+            // alone, they gave nothing during the swipe and one lump at its end, which apps took for a fling: a
+            // two-finger scroll jumped a page at a time. The frame's scroll is the sum of its samples.
             float scrollX = event.getAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_X_DISTANCE);
             float scrollY = event.getAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_Y_DISTANCE);
+            for (int h = 0; h < event.getHistorySize(); h++) {
+                scrollX += event.getHistoricalAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_X_DISTANCE, h);
+                scrollY += event.getHistoricalAxisValue(MotionEvent.AXIS_GESTURE_SCROLL_Y_DISTANCE, h);
+            }
             if (scrollY != 0) {
                 Native.nativeSendTouchpadScroll(0, scrollY);
                 mTouchpadScrolledV = true;
